@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "videos": "node scripts/prepare-videos.mjs"
+    "videos": "node scripts/prepare-videos.mjs",
+    "logs": "npx vercel inspect dpl_G39wN5uTrocRVXreguTvRRw2mHta --logs"
   },
   "dependencies": {
     "hls.js": "^1.5.17",
