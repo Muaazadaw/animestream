@@ -1,0 +1,241 @@
+// Thin client for the public AniList GraphQL API (https://docs.anilist.co).
+// Used from server components only, so responses are cached by Next.js.
+
+const ENDPOINT = "https://graphql.anilist.co";
+
+export type MediaTitle = {
+  romaji: string | null;
+  english: string | null;
+  native: string | null;
+  userPreferred: string | null;
+};
+
+export type MediaCard = {
+  id: number;
+  title: MediaTitle;
+  coverImage: { extraLarge: string | null; large: string | null; color: string | null };
+  bannerImage: string | null;
+  format: string | null;
+  status: string | null;
+  episodes: number | null;
+  averageScore: number | null;
+  seasonYear: number | null;
+  genres: string[];
+  description?: string | null;
+  nextAiringEpisode: { episode: number; airingAt: number } | null;
+};
+
+export type ExternalLink = { url: string; site: string; type: string | null; icon: string | null; color: string | null };
+
+export type MediaDetail = MediaCard & {
+  duration: number | null;
+  season: string | null;
+  popularity: number | null;
+  source: string | null;
+  startDate: { year: number | null; month: number | null; day: number | null };
+  trailer: { id: string; site: string } | null;
+  studios: { nodes: { name: string }[] };
+  externalLinks: ExternalLink[];
+  streamingEpisodes: { title: string; thumbnail: string; url: string; site: string }[];
+  characters: {
+    edges: { role: string; node: { name: { full: string }; image: { medium: string | null } } }[];
+  };
+  relations: { edges: { relationType: string; node: MediaCard & { type: string } }[] };
+  recommendations: { nodes: { mediaRecommendation: MediaCard | null }[] };
+};
+
+export type AiringItem = { id: number; airingAt: number; episode: number; media: MediaCard };
+
+const CARD_FIELDS = `
+  id
+  title { romaji english native userPreferred }
+  coverImage { extraLarge large color }
+  bannerImage
+  format
+  status
+  episodes
+  averageScore
+  seasonYear
+  genres
+  nextAiringEpisode { episode airingAt }
+`;
+
+async function query<T>(gql: string, variables: Record<string, unknown> = {}, revalidate = 3600): Promise<T> {
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ query: gql, variables }),
+    next: { revalidate },
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || json.errors) {
+    const msg = json?.errors?.[0]?.message ?? `AniList request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return json.data as T;
+}
+
+export function titleOf(t: MediaTitle): string {
+  return t.english || t.userPreferred || t.romaji || t.native || "Untitled";
+}
+
+export function currentSeason(date = new Date()): { season: string; year: number } {
+  const m = date.getMonth();
+  const season = m < 3 ? "WINTER" : m < 6 ? "SPRING" : m < 9 ? "SUMMER" : "FALL";
+  return { season, year: date.getFullYear() };
+}
+
+function nextSeason(date = new Date()) {
+  const order = ["WINTER", "SPRING", "SUMMER", "FALL"];
+  const { season, year } = currentSeason(date);
+  const i = order.indexOf(season);
+  return i === 3 ? { season: "WINTER", year: year + 1 } : { season: order[i + 1], year };
+}
+
+/** Episodes that have actually aired (or the full count for finished shows). */
+export function airedEpisodes(m: Pick<MediaCard, "episodes" | "nextAiringEpisode" | "status">): number {
+  if (m.nextAiringEpisode) return Math.max(0, m.nextAiringEpisode.episode - 1);
+  if (m.status === "NOT_YET_RELEASED") return 0;
+  return m.episodes ?? 0;
+}
+
+export async function getHome() {
+  const now = currentSeason();
+  const next = nextSeason();
+  type Page = { media: MediaCard[] };
+  const data = await query<{ trending: Page; season: Page; upcoming: Page; top: Page; popular: Page }>(
+    `query ($season: MediaSeason, $year: Int, $nSeason: MediaSeason, $nYear: Int) {
+      trending: Page(perPage: 20) { media(type: ANIME, sort: TRENDING_DESC, isAdult: false) { ${CARD_FIELDS} description(asHtml: false) } }
+      season: Page(perPage: 20) { media(type: ANIME, season: $season, seasonYear: $year, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      upcoming: Page(perPage: 20) { media(type: ANIME, season: $nSeason, seasonYear: $nYear, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      top: Page(perPage: 20) { media(type: ANIME, sort: SCORE_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      popular: Page(perPage: 20) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
+    }`,
+    { season: now.season, year: now.year, nSeason: next.season, nYear: next.year },
+    1800,
+  );
+  return {
+    trending: data.trending.media,
+    season: data.season.media,
+    upcoming: data.upcoming.media,
+    top: data.top.media,
+    popular: data.popular.media,
+    seasonLabel: `${now.season.toLowerCase()} ${now.year}`,
+  };
+}
+
+export type SearchParams = {
+  search?: string;
+  genre?: string;
+  format?: string;
+  status?: string;
+  sort?: string;
+  page?: number;
+};
+
+export async function searchAnime(p: SearchParams) {
+  const sort = p.sort || (p.search ? "SEARCH_MATCH" : "POPULARITY_DESC");
+  const data = await query<{ Page: { pageInfo: { hasNextPage: boolean; currentPage: number }; media: MediaCard[] } }>(
+    `query ($search: String, $genre: String, $format: MediaFormat, $status: MediaStatus, $sort: [MediaSort], $page: Int) {
+      Page(page: $page, perPage: 30) {
+        pageInfo { hasNextPage currentPage }
+        media(type: ANIME, search: $search, genre: $genre, format: $format, status: $status, sort: $sort, isAdult: false) { ${CARD_FIELDS} }
+      }
+    }`,
+    {
+      search: p.search || undefined,
+      genre: p.genre || undefined,
+      format: p.format || undefined,
+      status: p.status || undefined,
+      sort: [sort],
+      page: p.page || 1,
+    },
+    600,
+  );
+  return data.Page;
+}
+
+export async function getAnime(id: number): Promise<MediaDetail | null> {
+  const data = await query<{ Media: MediaDetail | null }>(
+    `query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        ${CARD_FIELDS}
+        description(asHtml: false)
+        duration
+        season
+        popularity
+        source
+        startDate { year month day }
+        trailer { id site }
+        studios(isMain: true) { nodes { name } }
+        externalLinks { url site type icon color }
+        streamingEpisodes { title thumbnail url site }
+        characters(perPage: 12, sort: [ROLE, RELEVANCE]) { edges { role node { name { full } image { medium } } } }
+        relations { edges { relationType node { ${CARD_FIELDS} type } } }
+        recommendations(perPage: 14, sort: RATING_DESC) { nodes { mediaRecommendation { ${CARD_FIELDS} } } }
+      }
+    }`,
+    { id },
+    3600,
+  ).catch((e: Error) => {
+    if (/not found/i.test(e.message)) return { Media: null };
+    throw e;
+  });
+  return data.Media;
+}
+
+export async function getSchedule(days = 7): Promise<AiringItem[]> {
+  const start = Math.floor(Date.now() / 1000) - 60 * 60 * 6;
+  const end = start + days * 86400;
+  const items: AiringItem[] = [];
+  for (let page = 1; page <= 4; page++) {
+    const data = await query<{ Page: { pageInfo: { hasNextPage: boolean }; airingSchedules: AiringItem[] } }>(
+      `query ($start: Int, $end: Int, $page: Int) {
+        Page(page: $page, perPage: 50) {
+          pageInfo { hasNextPage }
+          airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
+            id airingAt episode
+            media { ${CARD_FIELDS} isAdult }
+          }
+        }
+      }`,
+      { start, end, page },
+      900,
+    );
+    items.push(...data.Page.airingSchedules.filter((s) => !(s.media as MediaCard & { isAdult?: boolean }).isAdult));
+    if (!data.Page.pageInfo.hasNextPage) break;
+  }
+  return items;
+}
+
+export const GENRES = [
+  "Action", "Adventure", "Comedy", "Drama", "Ecchi", "Fantasy", "Horror", "Mahou Shoujo", "Mecha",
+  "Music", "Mystery", "Psychological", "Romance", "Sci-Fi", "Slice of Life", "Sports", "Supernatural", "Thriller",
+];
+
+export const FORMATS = ["TV", "TV_SHORT", "MOVIE", "SPECIAL", "OVA", "ONA"];
+
+/** AniList descriptions contain a little HTML; turn them into plain text. */
+export function plainText(html: string | null | undefined): string {
+  if (!html) return "";
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function prettyEnum(v: string | null | undefined): string {
+  if (!v) return "";
+  if (v === "TV" || v === "OVA" || v === "ONA") return v;
+  return v
+    .toLowerCase()
+    .split("_")
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}

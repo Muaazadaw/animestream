@@ -1,0 +1,9 @@
+node_modules
+.claude
+.next
+out
+.env*.local
+next-env.d.ts
+*.tsbuildinfo
+# Encoded video output: upload this to storage, don't commit it
+hosting
