@@ -198,13 +198,18 @@ export function getSeen(): Record<string, number> {
   return read<Record<string, number>>(SEEN_KEY, {});
 }
 
-export function markSeen(ids: string[]) {
+export function isSeen(seen: Record<string, number>, id: string) {
+  return (seen[id] ?? 0) > 0;
+}
+
+/** Mark notifications read (or unread again). */
+export function markSeen(ids: string[], read = true) {
   const seen = getSeen();
   const now = Date.now();
   let changed = false;
   for (const id of ids) {
-    if (!seen[id]) {
-      seen[id] = now;
+    if (isSeen(seen, id) !== read) {
+      seen[id] = read ? now : -now;
       changed = true;
     }
   }

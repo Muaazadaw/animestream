@@ -44,7 +44,7 @@ export default function ScheduleView({ items }: { items: AiringItem[] }) {
           <Link key={it.id} href={`/anime/${it.media.id}`} className={`sched ${it.airingAt < now ? "sched--aired" : ""}`}>
             <time>{new Date(it.airingAt * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</time>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={it.media.coverImage.large ?? ""} alt="" loading="lazy" />
+            <img src={it.media.coverImage.large ?? undefined} alt="" loading="lazy" />
             <div className="sched__body">
               <strong>{titleOf(it.media.title)}</strong>
               <span>Episode {it.episode}</span>

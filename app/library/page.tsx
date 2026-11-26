@@ -6,7 +6,7 @@ import { Avatar, useProfile } from "@/components/AccountMenu";
 import { HistoryCard, useHistory } from "@/components/ContinueWatching";
 import { Icon } from "@/components/Menu";
 import type { AnimeInfo } from "@/app/api/anime-info/route";
-import { prettyEnum } from "@/lib/anilist";
+import { prettyEnum, statusDot } from "@/lib/anilist";
 import { fetchAnimeInfo } from "@/lib/notifications";
 import { LIST_STATUSES, type ListStatus } from "@/lib/state";
 import {
@@ -81,10 +81,6 @@ function useLibrary() {
     return () => window.removeEventListener(STORAGE_EVENT, sync);
   }, []);
   return { entries, custom };
-}
-
-function airingDot(status: string | null | undefined) {
-  return status === "RELEASING" ? "dot--airing" : status === "NOT_YET_RELEASED" ? "dot--upcoming" : "dot--finished";
 }
 
 function CardMenu({ entry, custom }: { entry: Entry; custom: CustomList[] }) {
@@ -342,7 +338,7 @@ export default function LibraryPage() {
                   <Link key={e.id} href={`/anime/${e.id}`} className="lcard">
                     <span className="lcard__img">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={m?.coverImage.large ?? e.cover ?? ""} alt="" loading="lazy" />
+                      <img src={m?.coverImage.large ?? e.cover ?? undefined} alt="" loading="lazy" />
                       <CardMenu entry={e} custom={custom} />
                       {e.favorite ? (
                         <span className="lcard__fav">
@@ -356,7 +352,7 @@ export default function LibraryPage() {
                       ) : null}
                     </span>
                     <span className="lcard__title">
-                      <i className={`dot ${airingDot(m?.status)}`} />
+                      <i className={`dot ${statusDot(m?.status)}`} />
                       {e.title}
                     </span>
                     <span className="chips">

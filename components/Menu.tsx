@@ -162,6 +162,33 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  home: <path d="M3 11 12 3l9 8M5 9.5V21h5v-6h4v6h5V9.5" />,
+  flame: <path d="M12 3s5 4.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-4 1.5-4s.5 2.5 2.5 2.5C11 8 12 3 12 3z" />,
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15.5 8.5-2 5-5 2 2-5z" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </>
+  ),
+  library: <path d="M5 4v16M10 4v16M15 5l4 15" />,
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v6M12 7.5v.5" />
+    </>
+  ),
   trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
 };
 

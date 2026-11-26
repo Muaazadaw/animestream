@@ -3,18 +3,23 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { logout, useAccount } from "@/lib/sync";
 import AccountMenu from "./AccountMenu";
+import { Icon } from "./Menu";
 
 const NAV = [
-  { href: "/", label: "Home" },
-  { href: "/search", label: "Browse" },
-  { href: "/schedule", label: "Schedule" },
-  { href: "/library", label: "My List" },
+  { href: "/", label: "Home", icon: "home" },
+  { href: "/trending", label: "Trending", icon: "flame" },
+  { href: "/search", label: "Browse", icon: "compass" },
+  { href: "/schedule", label: "Schedule", icon: "calendar" },
+  { href: "/library", label: "My List", icon: "library" },
 ];
 
+/** Left icon rail (bottom bar on phones) plus a top bar with search and the account menu. */
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
+  const { user } = useAccount();
   const [q, setQ] = useState("");
   const [scrolled, setScrolled] = useState(false);
 
@@ -31,39 +36,53 @@ export default function Header() {
     router.push(term ? `/search?q=${encodeURIComponent(term)}` : "/search");
   }
 
+  const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+
   return (
-    <header className={`header ${scrolled ? "header--solid" : ""}`}>
-      <div className="header__inner">
-        <Link href="/" className="logo">
-          Anime<span>Stream</span>
+    <>
+      <aside className="rail">
+        <Link href="/" className="rail__logo" aria-label="AnimeStream home">
+          A<span>S</span>
         </Link>
-        <nav className="nav">
+        <nav className="rail__nav">
           {NAV.map((n) => (
-            <Link
-              key={n.href}
-              href={n.href}
-              className={(n.href === "/" ? pathname === "/" : pathname.startsWith(n.href)) ? "active" : ""}
-            >
-              {n.label}
+            <Link key={n.href} href={n.href} className={`rail__item ${active(n.href) ? "is-active" : ""}`} title={n.label}>
+              <Icon name={n.icon} size={20} />
+              <span className="rail__label">{n.label}</span>
             </Link>
           ))}
         </nav>
+        <div className="rail__bottom">
+          <Link href="/settings" className={`rail__item ${active("/settings") ? "is-active" : ""}`} title="Settings">
+            <Icon name="gear" size={20} />
+            <span className="rail__label">Settings</span>
+          </Link>
+          {user ? (
+            <button className="rail__item" title="Log out" onClick={() => void logout()}>
+              <Icon name="power" size={20} />
+              <span className="rail__label">Log out</span>
+            </button>
+          ) : (
+            <Link href="/settings#account" className="rail__item" title="Sign in">
+              <Icon name="user" size={20} />
+              <span className="rail__label">Sign in</span>
+            </Link>
+          )}
+        </div>
+      </aside>
+
+      <header className={`topbar ${scrolled ? "topbar--solid" : ""}`}>
+        <Link href="/" className="logo topbar__logo">
+          Anime<span>Stream</span>
+        </Link>
         <form className="search" onSubmit={submit} role="search">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search anime…"
-            aria-label="Search anime"
-          />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search anime…" aria-label="Search anime" />
           <button type="submit" aria-label="Search">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-3.5-3.5" />
-            </svg>
+            <Icon name="search" size={17} />
           </button>
         </form>
         <AccountMenu />
-      </div>
-    </header>
+      </header>
+    </>
   );
 }

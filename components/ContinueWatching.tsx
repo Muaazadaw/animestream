@@ -16,14 +16,27 @@ export function useHistory() {
   return items;
 }
 
+function clock(s: number) {
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+}
+
 export function HistoryCard({ h }: { h: HistoryEntry }) {
   const pct = h.duration ? Math.min(100, (h.time / h.duration) * 100) : 0;
   return (
     <div className="card card--wide">
       <Link href={`/watch/${h.id}?ep=${h.episode}`} className="card__img card__img--wide">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={h.cover ?? ""} alt="" loading="lazy" />
-        <span className="card__badge">EP {h.episode}</span>
+        <img src={h.cover ?? undefined} alt="" loading="lazy" />
+        <span className="card__badge card__badge--dark">
+          EP {h.episode}
+          {h.episodes ? ` / ${h.episodes}` : ""}
+        </span>
+        {h.duration ? (
+          <span className="card__time">
+            {clock(h.time)} / {clock(h.duration)}
+          </span>
+        ) : null}
         <span className="card__play" aria-hidden>
           <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
             <path d="M8 5v14l11-7z" />

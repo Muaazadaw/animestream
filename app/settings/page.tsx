@@ -184,6 +184,9 @@ function AniListSection() {
   const [username, setUsername] = useState("");
   const [state, setState] = useState<{ busy?: boolean; error?: string; done?: string }>({});
   const [, tick] = useState(0);
+  // Known only in the browser; filled in after mount so server and client render the same.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
 
   async function run(fn: () => Promise<string>) {
     setState({ busy: true });
@@ -251,7 +254,7 @@ function AniListSection() {
             ) : (
               <p className="notice">
                 The site owner needs to add <code>NEXT_PUBLIC_ANILIST_CLIENT_ID</code> first (free, instant: AniList → Settings →
-                Developer → Create New Client, redirect URL <code>{typeof window !== "undefined" ? `${location.origin}/settings/anilist` : "/settings/anilist"}</code>).
+                Developer → Create New Client, redirect URL <code>{origin}/settings/anilist</code>).
               </p>
             )}
             {expired ? <p className="form__error">Your AniList login expired — connect again.</p> : null}

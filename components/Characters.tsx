@@ -35,7 +35,7 @@ export default function Characters({ characters }: { characters: Character[] }) 
           return (
             <button key={c.id} className={`cast__row ${open === c.id ? "is-open" : ""}`} onClick={() => setOpen(open === c.id ? null : c.id)}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={c.image ?? ""} alt="" loading="lazy" />
+              <img src={c.image ?? undefined} alt="" loading="lazy" />
               <span className="cast__who">
                 <strong>{c.name}</strong>
                 <span>{prettyEnum(c.role)}</span>
@@ -56,7 +56,7 @@ export default function Characters({ characters }: { characters: Character[] }) 
       {selected ? (
         <div className="cast__detail">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={selected.image ?? ""} alt="" />
+          <img src={selected.image ?? undefined} alt="" />
           <div>
             <h3>
               {selected.name}

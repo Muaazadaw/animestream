@@ -29,13 +29,16 @@ export function Avatar({ src, name, size = 36 }: { src?: string | null; name: st
   );
 }
 
-function ago(ms: number) {
-  const s = (Date.now() - ms) / 1000;
-  if (s < 0) return "soon";
-  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  if (s < 86400 * 30) return `${Math.round(s / 86400)}d ago`;
-  return new Date(ms).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+function relTime(ms: number) {
+  const diff = ms - Date.now();
+  const abs = Math.abs(diff) / 1000;
+  const n =
+    abs < 3600 ? [Math.max(1, Math.round(abs / 60)), "minute"] :
+    abs < 86400 ? [Math.round(abs / 3600), "hour"] :
+    abs < 86400 * 60 ? [Math.round(abs / 86400), "day"] : null;
+  if (!n) return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const text = `${n[0]} ${n[1]}${n[0] === 1 ? "" : "s"}`;
+  return diff > 0 ? `in ${text}` : `${text} ago`;
 }
 
 /** Closes a popover on outside click / Escape. */
@@ -56,54 +59,97 @@ function usePopover() {
   return { open, setOpen, ref };
 }
 
-function Notifications() {
-  const { items, unread, loading, isUnread, markAllRead } = useNotifications();
-  const { open, setOpen, ref } = usePopover();
-  // Freeze which items were unread when the panel opened, so they stay highlighted while it's open.
-  const [fresh, setFresh] = useState<Set<string>>(new Set());
+const FIRST = 7;
 
-  function toggle() {
-    if (!open) {
-      setFresh(new Set(items.filter((n) => isUnread(n.id)).map((n) => n.id)));
-      markAllRead();
-    }
-    setOpen(!open);
-  }
+function Notifications() {
+  const { aired, upcoming, unread, loading, isRead, setRead, markAllRead } = useNotifications();
+  const { user } = useAccount();
+  const { open, setOpen, ref } = usePopover();
+  const [tab, setTab] = useState<"aired" | "upcoming">("aired");
+  const [all, setAll] = useState(false);
+  const items = tab === "aired" ? aired : upcoming;
+  const shown = all ? items : items.slice(0, FIRST);
 
   return (
     <div className="acct" ref={ref}>
-      <button className={`acct__btn ${open ? "is-open" : ""}`} onClick={toggle} aria-label={`Notifications${unread ? ` (${unread} new)` : ""}`}>
+      <button
+        className={`acct__btn ${open ? "is-open" : ""}`}
+        onClick={() => (setOpen(!open), setAll(false))}
+        aria-label={`Notifications${unread ? ` (${unread} unread)` : ""}`}
+      >
         <Icon name="inbox" size={18} />
         {unread ? <span className="acct__badge">{unread > 9 ? "9+" : unread}</span> : null}
       </button>
       {open ? (
         <div className="acct__pop notif">
-          <div className="notif__head">
-            <strong>Notifications</strong>
-            {loading ? <span className="muted">Updating…</span> : null}
+          <div className="notif__sync">
+            <Icon name="check" size={13} />
+            {user ? "Read status synced with your account." : "Read status saved on this device."}
+            {unread ? (
+              <button className="link-btn notif__all" onClick={markAllRead}>
+                Mark all read
+              </button>
+            ) : null}
           </div>
+          <div className="notif__tabs">
+            <button className={tab === "aired" ? "is-active" : ""} onClick={() => (setTab("aired"), setAll(false))}>
+              Aired{unread ? ` · ${unread}` : ""}
+            </button>
+            <button className={tab === "upcoming" ? "is-active" : ""} onClick={() => (setTab("upcoming"), setAll(false))}>
+              Upcoming
+            </button>
+          </div>
+          <p className="notif__note">Airing dates do not guarantee streaming availability.</p>
+
           {items.length === 0 ? (
             <p className="notif__empty">
               {loading
                 ? "Checking your shows…"
-                : "Nothing new. New episodes and seasons of shows in your lists show up here."}
+                : tab === "aired"
+                  ? "Nothing new. New episodes and seasons of shows in your lists show up here."
+                  : "No upcoming episodes for shows in your lists."}
             </p>
           ) : (
             <div className="notif__list">
-              {items.map((n) => (
-                <Link key={n.id} href={n.href} className={`notif__item ${fresh.has(n.id) ? "is-new" : ""}`} onClick={() => setOpen(false)}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={n.cover ?? ""} alt="" loading="lazy" />
-                  <span className="notif__body">
-                    <span className="notif__title">{n.title}</span>
-                    <span className="notif__text">
-                      <i className={`notif__kind notif__kind--${n.kind}`} />
-                      {n.text}
-                    </span>
-                    <span className="notif__time">{n.kind === "soon" ? "Today" : ago(n.time)}</span>
+              {shown.map((n) => {
+                const read = n.kind === "upcoming" || isRead(n.id);
+                return (
+                  <div key={n.id} className={`nrow ${read ? "" : "is-unread"}`}>
+                    <Link
+                      href={n.href}
+                      className="nrow__main"
+                      style={{ backgroundImage: n.banner ? `url(${n.banner})` : undefined }}
+                      onClick={() => {
+                        if (n.kind !== "upcoming") setRead(n.id, true);
+                        setOpen(false);
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={n.cover ?? undefined} alt="" loading="lazy" />
+                      <span className="nrow__body">
+                        <span className="nrow__title">{n.title}</span>
+                        <span className="nrow__chips">
+                          <span>{n.label}</span>
+                          <span>{relTime(n.time)}</span>
+                        </span>
+                      </span>
+                    </Link>
+                    {n.kind !== "upcoming" ? (
+                      <button className="nrow__read" onClick={() => setRead(n.id, !read)}>
+                        <strong>{read ? "Read" : "Unread"}</strong>
+                        <span>{read ? "Mark unread" : "Mark read"}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {items.length > FIRST ? (
+                <button className="notif__more" onClick={() => setAll(!all)} aria-label={all ? "Show fewer" : "Show more"}>
+                  <span style={{ display: "inline-flex", transform: all ? "rotate(180deg)" : undefined }}>
+                    <Icon name="chevron" size={18} />
                   </span>
-                </Link>
-              ))}
+                </button>
+              ) : null}
             </div>
           )}
         </div>

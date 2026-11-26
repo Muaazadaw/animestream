@@ -42,6 +42,12 @@ async function aniZip(id: number): Promise<AniZip | null> {
   }
 }
 
+/** A transparent title logo (fanart.tv "clearlogo") for the hero, if one exists. */
+export async function getClearLogo(id: number): Promise<string | null> {
+  const z = await aniZip(id);
+  return z?.images?.find((i) => i.coverType?.toLowerCase() === "clearlogo")?.url ?? null;
+}
+
 /** Episode titles, synopses, stills and air dates, keyed by episode number. */
 export async function getEpisodeMeta(m: MediaDetail): Promise<Record<number, EpisodeMeta>> {
   const out: Record<number, EpisodeMeta> = {};

@@ -8,7 +8,7 @@ export default function AnimeCard({ anime, badge }: { anime: MediaCard; badge?: 
     <Link href={`/anime/${anime.id}`} className="card" title={title}>
       <div className="card__img" style={{ background: anime.coverImage.color ?? "#1c1c26" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={anime.coverImage.extraLarge ?? anime.coverImage.large ?? ""} alt="" loading="lazy" />
+        <img src={anime.coverImage.extraLarge ?? anime.coverImage.large ?? undefined} alt="" loading="lazy" />
         {anime.averageScore ? <span className="card__score">★ {(anime.averageScore / 10).toFixed(1)}</span> : null}
         {badge ? <span className="card__badge">{badge}</span> : null}
         <span className="card__play" aria-hidden>

@@ -124,7 +124,10 @@ export async function logout() {
 }
 
 export function useAccount() {
-  const [state, setState] = useState({ user, createdAt, status, lastSynced });
+  // Always start "unknown" so the server render and the first client render match.
+  const [state, setState] = useState<{ user: string | null | undefined; createdAt: number | null; status: SyncStatus; lastSynced: number }>(
+    { user: undefined, createdAt: null, status: "idle", lastSynced: 0 },
+  );
   useEffect(() => {
     const update = () => setState({ user, createdAt, status, lastSynced });
     update();

@@ -1,24 +1,27 @@
 "use client";
 
-// Notifications built from the viewer's library plus fresh AniList data:
-// new episodes of shows they watch or plan to, episodes airing within a day,
-// and new seasons (announced or airing) of shows they've watched or planned.
+// Notifications built from the viewer's library plus fresh AniList data.
+// "Aired": new episodes of shows they watch or plan to, and new seasons
+// (announced or airing) of shows they've watched or planned. "Upcoming":
+// next episodes and season premieres with a date.
 
 import { useEffect, useMemo, useState } from "react";
 import type { AnimeInfoResponse } from "@/app/api/anime-info/route";
 import { titleOf } from "./anilist";
-import { exportState, markSeen, STORAGE_EVENT } from "./storage";
+import { exportState, isSeen, markSeen, STORAGE_EVENT } from "./storage";
 import type { LibraryState } from "./state";
 
 export type Notification = {
   id: string;
-  kind: "episode" | "soon" | "season";
+  kind: "episode" | "season" | "upcoming";
   animeId: number;
   title: string;
-  text: string;
+  /** Short chip, e.g. "EP 9" or "New season". */
+  label: string;
   cover: string | null;
+  banner: string | null;
   href: string;
-  /** ms; for sorting and "2h ago". */
+  /** ms: when it aired / will air, for sorting and "2 days ago" / "in 3 days". */
   time: number;
 };
 
@@ -65,12 +68,13 @@ function seasonLabel(n: { season: string | null; seasonYear: number | null; star
       ? new Date(n.startDate.year, n.startDate.month - 1).toLocaleDateString("en-US", { month: "short", year: "numeric" })
       : String(n.startDate.year);
   }
-  return "date TBA";
+  return "TBA";
 }
 
-export function buildNotifications(s: LibraryState, info: AnimeInfoResponse): Notification[] {
+export function buildNotifications(s: LibraryState, info: AnimeInfoResponse): { aired: Notification[]; upcoming: Notification[] } {
   const { watching, planning } = trackedIds(s);
-  const out: Notification[] = [];
+  const aired: Notification[] = [];
+  const upcoming: Notification[] = [];
   const now = Date.now();
   const progressOf = (id: number) => s.lists[id]?.progress ?? 0;
 
@@ -79,37 +83,38 @@ export function buildNotifications(s: LibraryState, info: AnimeInfoResponse): No
     if (progressOf(a.mediaId) >= a.episode) continue;
     const m = info.media[a.mediaId];
     if (!m) continue;
-    out.push({
+    aired.push({
       id: `ep:${a.mediaId}:${a.episode}`,
       kind: "episode",
       animeId: a.mediaId,
       title: titleOf(m.title),
-      text: `Episode ${a.episode} is out`,
+      label: `EP ${a.episode}`,
       cover: m.coverImage.large,
+      banner: m.bannerImage,
       href: `/watch/${a.mediaId}?ep=${a.episode}`,
       time: a.airingAt * 1000,
     });
   }
 
-  for (const id of watching) {
+  for (const id of new Set([...watching, ...planning])) {
     const m = info.media[id];
     const next = m?.nextAiringEpisode;
-    if (!m || !next || next.airingAt * 1000 - now > 86400_000) continue;
-    const hours = Math.max(1, Math.round((next.airingAt * 1000 - now) / 3600_000));
-    out.push({
-      id: `soon:${id}:${next.episode}`,
-      kind: "soon",
+    if (!m || !next || next.airingAt * 1000 - now > 14 * 86400_000) continue;
+    upcoming.push({
+      id: `next:${id}:${next.episode}`,
+      kind: "upcoming",
       animeId: id,
       title: titleOf(m.title),
-      text: `Episode ${next.episode} airs in ${hours}h`,
+      label: `EP ${next.episode}`,
       cover: m.coverImage.large,
+      banner: m.bannerImage,
       href: `/anime/${id}`,
-      time: now,
+      time: next.airingAt * 1000,
     });
   }
 
   // New seasons: sequels that are announced or airing, that the viewer hasn't started.
-  const done = new Set(
+  const started = new Set(
     Object.values(s.lists)
       .filter((l) => l.status === "COMPLETED" || l.status === "CURRENT" || l.status === "REPEATING")
       .map((l) => l.id),
@@ -120,27 +125,34 @@ export function buildNotifications(s: LibraryState, info: AnimeInfoResponse): No
     if (!(status === "COMPLETED" || status === "CURRENT" || status === "REPEATING" || status === "PLANNING")) continue;
     for (const e of m.relations.edges) {
       const n = e.node;
-      if (e.relationType !== "SEQUEL" || n.type !== "ANIME" || done.has(n.id) || seenSequel.has(n.id)) continue;
+      if (e.relationType !== "SEQUEL" || n.type !== "ANIME" || started.has(n.id) || seenSequel.has(n.id)) continue;
       if (n.status !== "NOT_YET_RELEASED" && n.status !== "RELEASING") continue;
       seenSequel.add(n.id);
-      const start = n.startDate.year ? new Date(n.startDate.year, (n.startDate.month ?? 1) - 1, 1).getTime() : 0;
-      out.push({
-        id: `season:${n.id}:${n.status}`,
-        kind: "season",
+      const start = n.startDate.year ? new Date(n.startDate.year, (n.startDate.month ?? 1) - 1, n.startDate.day ?? 1).getTime() : 0;
+      const base = {
         animeId: n.id,
         title: titleOf(n.title),
-        text:
-          n.status === "RELEASING"
-            ? `New season of ${titleOf(m.title)} is airing now`
-            : `New season of ${titleOf(m.title)} announced · ${seasonLabel(n)}`,
         cover: n.coverImage.large,
+        banner: n.bannerImage ?? m.bannerImage,
         href: `/anime/${n.id}`,
-        time: n.status === "RELEASING" ? Math.min(start || now, now) : start && start < now ? start : now - 1,
+      };
+      aired.push({
+        ...base,
+        id: `season:${n.id}:${n.status}`,
+        kind: "season",
+        label: n.status === "RELEASING" ? "New season · Airing" : `New season · ${seasonLabel(n)}`,
+        time: n.status === "RELEASING" ? Math.min(start || now, now) : now - 60_000,
       });
+      if (n.status === "NOT_YET_RELEASED" && start > now) {
+        upcoming.push({ ...base, id: `premiere:${n.id}`, kind: "upcoming", label: "Premiere", time: start });
+      }
     }
   }
 
-  return out.sort((a, b) => b.time - a.time).slice(0, 50);
+  return {
+    aired: aired.sort((a, b) => b.time - a.time).slice(0, 60),
+    upcoming: upcoming.sort((a, b) => a.time - b.time).slice(0, 60),
+  };
 }
 
 /** Notifications plus unread state; refreshes when the library changes. */
@@ -171,14 +183,15 @@ export function useNotifications() {
     };
   }, [idsKey]);
 
-  const items = useMemo(() => (state && info ? buildNotifications(state, info) : []), [state, info]);
-  const unread = state ? items.filter((n) => !state.seen[n.id]).length : 0;
+  const lists = useMemo(() => (state && info ? buildNotifications(state, info) : { aired: [], upcoming: [] }), [state, info]);
+  const unread = state ? lists.aired.filter((n) => !isSeen(state.seen, n.id)).length : 0;
 
   return {
-    items,
+    ...lists,
     unread,
     loading,
-    isUnread: (id: string) => !!state && !state.seen[id],
-    markAllRead: () => markSeen(items.map((n) => n.id)),
+    isRead: (id: string) => !!state && isSeen(state.seen, id),
+    setRead: (id: string, read: boolean) => markSeen([id], read),
+    markAllRead: () => markSeen(lists.aired.map((n) => n.id)),
   };
 }

@@ -83,7 +83,7 @@ export type LibraryState = {
   favorites: Record<string, Favorite>;
   customLists: Record<string, CustomList>;
   profile: Profile;
-  /** Notification id → time it was seen. */
+  /** Notification id → time marked read (positive) or marked unread again (negative). */
   seen: Record<string, number>;
   /** Deletions, so a removal on one device isn't undone by another: id → time. */
   removed: { history: Record<string, number>; watchlist: Record<string, number> };
@@ -145,10 +145,14 @@ export function mergeState(a: Partial<LibraryState>, b: Partial<LibraryState>): 
 
   const profile = newer(a.profile, b.profile, (x) => x.updatedAt) ?? { updatedAt: 0 };
 
-  // Keep the 300 most recently seen notification ids.
+  // Newest read/unread action wins; keep the 300 most recent.
+  const seenAll: Record<string, number> = { ...a.seen };
+  for (const [k, v] of Object.entries(b.seen ?? {})) {
+    if (!(k in seenAll) || Math.abs(v) > Math.abs(seenAll[k])) seenAll[k] = v;
+  }
   const seen = Object.fromEntries(
-    Object.entries(maxMap(a.seen, b.seen))
-      .sort((x, y) => y[1] - x[1])
+    Object.entries(seenAll)
+      .sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))
       .slice(0, 300),
   );
 

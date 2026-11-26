@@ -99,29 +99,85 @@ export function airedEpisodes(m: Pick<MediaCard, "episodes" | "nextAiringEpisode
   return m.episodes ?? 0;
 }
 
+export type LatestEpisode = { episode: number; airingAt: number; media: MediaCard };
+
 export async function getHome() {
   const now = currentSeason();
   const next = nextSeason();
+  // Rounded to 15 minutes so the cached response is reused.
+  const nowTs = Math.floor(Date.now() / 1000 / 900) * 900;
   type Page = { media: MediaCard[] };
-  const data = await query<{ trending: Page; season: Page; upcoming: Page; top: Page; popular: Page }>(
-    `query ($season: MediaSeason, $year: Int, $nSeason: MediaSeason, $nYear: Int) {
+  const data = await query<{
+    trending: Page;
+    season: Page;
+    upcoming: Page;
+    top: Page;
+    popular: Page;
+    airing: Page;
+    soon: Page;
+    latest: { airingSchedules: (LatestEpisode & { media: MediaCard & { isAdult: boolean; popularity: number } })[] };
+  }>(
+    `query ($season: MediaSeason, $year: Int, $nSeason: MediaSeason, $nYear: Int, $since: Int, $now: Int) {
       trending: Page(perPage: 20) { media(type: ANIME, sort: TRENDING_DESC, isAdult: false) { ${CARD_FIELDS} description(asHtml: false) } }
       season: Page(perPage: 20) { media(type: ANIME, season: $season, seasonYear: $year, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
       upcoming: Page(perPage: 20) { media(type: ANIME, season: $nSeason, seasonYear: $nYear, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
       top: Page(perPage: 20) { media(type: ANIME, sort: SCORE_DESC, isAdult: false) { ${CARD_FIELDS} } }
       popular: Page(perPage: 20) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      airing: Page(perPage: 10) { media(type: ANIME, status: RELEASING, sort: TRENDING_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      soon: Page(perPage: 10) { media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      latest: Page(perPage: 50) {
+        airingSchedules(airingAt_greater: $since, airingAt_lesser: $now, sort: TIME_DESC) {
+          episode airingAt media { ${CARD_FIELDS} isAdult popularity }
+        }
+      }
     }`,
-    { season: now.season, year: now.year, nSeason: next.season, nYear: next.year },
-    1800,
+    {
+      season: now.season,
+      year: now.year,
+      nSeason: next.season,
+      nYear: next.year,
+      since: nowTs - 4 * 86400,
+      now: nowTs,
+    },
+    900,
   );
+
+  // One entry per show (its newest episode), skipping adult and very obscure titles.
+  const seen = new Set<number>();
+  const latest: LatestEpisode[] = [];
+  for (const s of data.latest.airingSchedules) {
+    if (s.media.isAdult || s.media.popularity < 2000 || seen.has(s.media.id)) continue;
+    seen.add(s.media.id);
+    latest.push(s);
+  }
+
   return {
     trending: data.trending.media,
     season: data.season.media,
     upcoming: data.upcoming.media,
     top: data.top.media,
     popular: data.popular.media,
+    topAiring: data.airing.media,
+    upcomingSoon: data.soon.media,
+    latest,
     seasonLabel: `${now.season.toLowerCase()} ${now.year}`,
   };
+}
+
+export async function getSeasonal(season: string, year: number, page = 1) {
+  const data = await query<{ Page: { pageInfo: { hasNextPage: boolean }; media: (MediaCard & { description: string | null })[] } }>(
+    `query ($season: MediaSeason, $year: Int, $page: Int) {
+      Page(page: $page, perPage: 30) {
+        pageInfo { hasNextPage }
+        media(type: ANIME, season: $season, seasonYear: $year, sort: [TRENDING_DESC, POPULARITY_DESC], isAdult: false) {
+          ${CARD_FIELDS} description(asHtml: false)
+        }
+      }
+    }`,
+    { season, year, page },
+    1800,
+  );
+  return data.Page;
 }
 
 export type SearchParams = {
@@ -228,6 +284,11 @@ export function plainText(html: string | null | undefined): string {
     .replace(/&gt;/g, ">")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** CSS class for the coloured airing-status dot: green airing, blue finished, amber upcoming. */
+export function statusDot(status: string | null | undefined): string {
+  return status === "RELEASING" ? "dot--airing" : status === "NOT_YET_RELEASED" ? "dot--upcoming" : "dot--finished";
 }
 
 export function prettyEnum(v: string | null | undefined): string {

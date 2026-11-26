@@ -65,7 +65,7 @@ export default async function AnimePage({ params }: Props) {
       />
       <div className="container detail__main">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="detail__cover" src={m.coverImage.extraLarge ?? m.coverImage.large ?? ""} alt={title} />
+        <img className="detail__cover" src={m.coverImage.extraLarge ?? m.coverImage.large ?? undefined} alt={title} />
         <div className="detail__info">
           <h1>{title}</h1>
           {m.title.native ? <div className="detail__native">{m.title.native}</div> : null}
