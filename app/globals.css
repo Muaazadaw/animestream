@@ -988,3 +988,48 @@ video::cue {
 .tcard .chips { align-items: center; }
 .tcard .chips .dot { margin-right: 2px; }
 .tcard__desc { font-size: 13px; line-height: 1.5; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Hero carousel: swipe / drag, directional slide transitions, autoplay progress */
+.hero { touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; }
+.hero.is-dragging { cursor: grabbing; }
+.hero__bg { transition: opacity 0.9s ease, transform 1.4s cubic-bezier(0.2, 0.7, 0.2, 1); will-change: transform, opacity; }
+.hero[data-dir="next"] .hero__bg:not(.is-active) { transform: translateX(-5%) scale(1.06); }
+.hero[data-dir="prev"] .hero__bg:not(.is-active) { transform: translateX(5%) scale(1.06); }
+.hero[data-dir="next"] .hero__bg.is-active { animation: hero-bg-next 1.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.hero[data-dir="prev"] .hero__bg.is-active { animation: hero-bg-prev 1.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+@keyframes hero-bg-next { from { transform: translateX(6%) scale(1.08); } }
+@keyframes hero-bg-prev { from { transform: translateX(-6%) scale(1.08); } }
+.hero__content { transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.35s; }
+.hero[data-dir="next"] .hero__content { animation: hero-in-next 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.hero[data-dir="prev"] .hero__content { animation: hero-in-prev 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes hero-in-next { from { opacity: 0; transform: translateX(48px); } }
+@keyframes hero-in-prev { from { opacity: 0; transform: translateX(-48px); } }
+/* Stagger the content in. */
+.hero__content > * { animation: hero-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.hero__content > :nth-child(2) { animation-delay: 0.06s; }
+.hero__content > :nth-child(3) { animation-delay: 0.12s; }
+.hero__content > :nth-child(4) { animation-delay: 0.18s; }
+@keyframes hero-rise { from { opacity: 0; transform: translateY(12px); } }
+.hero.is-dragging .hero__bg, .hero.is-dragging .hero__content { transition: none; }
+.hero__logo, .hero__content img { -webkit-user-drag: none; }
+
+.hero__arrow {
+  position: absolute; top: 50%; z-index: 3; width: 46px; height: 46px; margin-top: -23px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; color: #fff; opacity: 0; transition: opacity 0.25s, background 0.2s, transform 0.2s;
+  background: rgba(10, 10, 14, 0.45); border: 1px solid rgba(255, 255, 255, 0.15); backdrop-filter: blur(6px);
+}
+.hero__arrow--prev { left: 18px; }
+.hero__arrow--next { right: 18px; }
+.hero:hover .hero__arrow { opacity: 1; }
+.hero__arrow:hover { background: rgba(10, 10, 14, 0.75); transform: scale(1.06); }
+@media (hover: none) { .hero__arrow { display: none; } }
+
+.hero__dots button { position: relative; overflow: hidden; transition: width 0.4s cubic-bezier(0.2, 0.7, 0.2, 1), background 0.3s; }
+.hero__dots button.is-active { width: 34px; background: rgba(255, 255, 255, 0.3); }
+.hero__fill { position: absolute; inset: 0; background: #fff; transform-origin: left; animation: hero-fill linear forwards; }
+.hero__fill.is-paused { animation-play-state: paused; }
+@keyframes hero-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__bg, .hero__content, .hero__content > * { animation: none !important; transition: opacity 0.3s !important; }
+}
