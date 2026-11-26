@@ -540,10 +540,24 @@ video::cue {
 .player--plyr .plyr { border-radius: var(--radius); }
 .player--plyr:fullscreen .plyr { border-radius: 0; }
 .player--plyr video { object-fit: contain; }
-.player--plyr .plyr__captions { bottom: var(--sub-bottom, 8%); }
+.player--plyr { container-type: inline-size; }
+.player--plyr .plyr__captions { bottom: var(--sub-bottom, 6%); padding: 0 4%; }
+/* Fansub-style captions: heavy rounded sans, white fill, thick black outline drawn
+   behind the letters, soft drop shadow. Sizes scale with the player width. */
 .player--plyr .plyr__caption {
-  font-size: var(--sub-size, 18px); color: var(--sub-color, #fff); background: var(--sub-bg, rgba(0, 0, 0, 0.6));
-  text-shadow: 0 0 var(--sub-outline, 2px) #000, 0 0 var(--sub-outline, 2px) #000;
+  /* One "px" on a 900px-wide player. */
+  --sub-px: calc(100cqw / 900);
+  font-family: var(--font-caption), "Roboto", "Arial", sans-serif;
+  font-weight: 700;
+  font-size: max(15px, calc(var(--sub-size, 28) * var(--sub-px)));
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: var(--sub-color, #fff);
+  background: var(--sub-bg, transparent);
+  padding: 0.05em 0.25em;
+  -webkit-text-stroke: max(2px, calc(var(--sub-outline, 3) * 2 * var(--sub-px))) #000;
+  paint-order: stroke fill;
+  text-shadow: 0 calc(2 * var(--sub-px)) calc(4 * var(--sub-px)) rgba(0, 0, 0, 0.6);
 }
 .player--plyr .player__skip, .player--plyr .player__next, .player--plyr .player__error { z-index: 5; }
 .player__subs-btn {

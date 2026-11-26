@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Roboto } from "next/font/google";
 import Header from "@/components/Header";
 import SyncClient from "@/components/SyncClient";
 import "./globals.css";
@@ -10,10 +11,13 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: "#0b0b10" };
 
+// Subtitle font (the usual fansub face); only exposed as a CSS variable.
+const captionFont = Roboto({ subsets: ["latin"], weight: ["700"], variable: "--font-caption", display: "swap" });
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className={captionFont.variable}>
         <SyncClient />
         <Header />
         <main>{children}</main>

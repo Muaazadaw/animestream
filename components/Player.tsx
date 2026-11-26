@@ -32,17 +32,20 @@ type Props = {
   onProgress: (time: number, duration: number) => void;
 };
 
+// Fansub look: bold white text, thick black outline, no box. fontSize is the
+// size on a 900px-wide player; captions scale with the player (and fullscreen).
 const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
-  fontSize: 18,
+  fontSize: 28,
   textColor: "#ffffff",
   backgroundColor: "#000000",
-  backgroundOpacity: 0.6,
-  outlineWidth: 2,
-  bottomOffset: 8,
+  backgroundOpacity: 0,
+  outlineWidth: 3,
+  bottomOffset: 6,
   delay: 0,
 };
 
-const SUBTITLE_STORAGE_KEY = "animestream:subtitle-settings";
+// v2: new defaults, so settings saved with the old boxed style don't stick.
+const SUBTITLE_STORAGE_KEY = "animestream:subtitle-settings:v2";
 
 function loadSubtitleSettings(): SubtitleSettings {
   try {
@@ -336,10 +339,10 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
 
   const update = (p: Partial<SubtitleSettings>) => setSubs((s) => ({ ...s, ...p }));
   const subStyle = {
-    "--sub-size": `${subs.fontSize}px`,
+    "--sub-size": String(subs.fontSize),
     "--sub-color": subs.textColor,
     "--sub-bg": hexToRgba(subs.backgroundColor, subs.backgroundOpacity),
-    "--sub-outline": `${subs.outlineWidth}px`,
+    "--sub-outline": String(subs.outlineWidth),
     "--sub-bottom": `${subs.bottomOffset}%`,
   } as React.CSSProperties;
 
