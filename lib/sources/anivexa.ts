@@ -11,6 +11,27 @@ const BASE_URL = (
   process.env.ANIVEXA_BASE_URL ?? ""
 ).replace(/\/$/, "");
 
+// Flixcloud playlists are scrambled with a per-stream key and need flixcloud's
+// referer, which browsers can't send. The AniFlow API's proxy unscrambles them,
+// adds the headers, and converts .ass subtitles to WebVTT.
+const PROXY_URL = (
+  process.env.ANIFLOW_BASE_URL ?? ""
+).replace(/\/$/, "");
+
+function proxiedStreamUrl(url: string, key: string | undefined, audio: Audio): string {
+  if (!PROXY_URL) return url;
+  const params = new URLSearchParams({
+    url,
+    pk: key ?? "",
+    audio: audio === "dub" ? "english" : "japanese",
+  });
+  return `${PROXY_URL}/api/proxy/m3u8?${params}`;
+}
+
+function proxiedSubtitleUrl(url: string): string {
+  return PROXY_URL ? `${PROXY_URL}/api/proxy/subtitles?url=${encodeURIComponent(url)}` : url;
+}
+
 type AnivexaEpisode = {
   id?: string;
   audio?: string;
@@ -41,6 +62,8 @@ type AnivexaPlayResponse = {
     audio?: string;
     url?: string;
     type?: string;
+    key?: string;
+    playlist_key?: string;
     subtitles?: AnivexaSubtitle[];
     intro?: { start: number; end: number } | null;
     outro?: { start: number; end: number } | null;
@@ -68,7 +91,7 @@ function normalizeSubtitle(
   const isForced = language.includes("forced");
 
   return {
-    url: subtitle.url,
+    url: proxiedSubtitleUrl(subtitle.url),
     lang: "en",
     label: subtitle.language ?? `English ${index + 1}`,
     default:
@@ -172,7 +195,10 @@ export const anivexaProvider: SourceProvider = {
 
     const sources = usableStreams.length
       ? usableStreams.map((stream, index) => ({
-          url: stream.url as string,
+          url:
+            stream.type === "mp4"
+              ? (stream.url as string)
+              : proxiedStreamUrl(stream.url as string, stream.playlist_key ?? stream.key, audio),
           type:
             stream.type === "mp4"
               ? ("mp4" as const)
@@ -181,7 +207,7 @@ export const anivexaProvider: SourceProvider = {
         }))
       : [
           {
-            url: data.stream_url as string,
+            url: proxiedStreamUrl(data.stream_url as string, undefined, audio),
             type: "hls" as const,
             quality: "auto",
           },

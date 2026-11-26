@@ -147,6 +147,8 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
           maxMaxBufferLength: 120,
         });
         let recoveries = 0;
+        let retries = 0;
+        let srcIndex = 0;
         await new Promise<void>((resolve) => {
           hls!.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
             levelByHeight = new Map(data.levels.map((l, i) => [l.height, i]));
@@ -155,9 +157,19 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
           });
           hls!.on(Hls.Events.ERROR, (_e, data) => {
             if (!data.fatal) return;
-            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls!.startLoad();
+            // A playlist that can't be read (e.g. still encrypted) won't fix itself on retry.
+            const unreadable =
+              data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR ||
+              data.details === Hls.ErrorDetails.LEVEL_PARSING_ERROR;
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !unreadable && retries++ < 2) hls!.startLoad();
             else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && recoveries++ < 2) hls!.recoverMediaError();
-            else {
+            else if (srcIndex < stream.sources.length - 1) {
+              // Fall back to the stream's next server before giving up.
+              srcIndex++;
+              retries = 0;
+              recoveries = 0;
+              hls!.loadSource(stream.sources[srcIndex].url);
+            } else {
               setError("This stream failed to load. Try another server.");
               hls!.destroy();
               resolve();
