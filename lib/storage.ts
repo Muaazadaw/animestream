@@ -87,16 +87,25 @@ export function getHistory(): HistoryEntry[] {
   return read<HistoryEntry[]>(HISTORY_KEY, []).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+/** Whether a position counts as having watched the episode (Settings → sync threshold). */
+export function isWatched(time: number, duration: number) {
+  return duration > 0 && time / duration >= getPrefs().syncThreshold;
+}
+
 export function saveProgress(entry: Omit<HistoryEntry, "updatedAt">) {
+  const prefs = getPrefs();
+  if (prefs.pauseHistory) return;
   const now = Date.now();
   const rest = getHistory().filter((h) => h.id !== entry.id);
   write(HISTORY_KEY, [{ ...entry, updatedAt: now }, ...rest].slice(0, 200));
   write(`${POS_PREFIX}${entry.id}:${entry.episode}`, { t: entry.time, d: entry.duration, u: now });
 
   // Finishing an episode moves the show along in the viewer's list.
-  if (entry.duration && entry.time / entry.duration > 0.9) {
+  if (prefs.autoSyncList && isWatched(entry.time, entry.duration)) {
     const cur = getLists()[entry.id];
-    if (!cur || cur.progress < entry.episode) {
+    // Only shows being watched (or not in a list yet) move along; Planning/Paused etc. are left alone.
+    const tracking = !cur || cur.status === "CURRENT" || cur.status === "REPEATING";
+    if (tracking && (!cur || cur.progress < entry.episode)) {
       const done = !!entry.episodes && entry.episode >= entry.episodes;
       setListEntry({
         id: entry.id,
@@ -120,6 +129,20 @@ export function getPosition(id: number, episode: number): Position | null {
 export function removeHistory(id: number) {
   markRemoved("history", id);
   write(HISTORY_KEY, getHistory().filter((h) => h.id !== id));
+}
+
+/** Forget every watched show and playback position (synced as deletions). */
+export function clearHistory() {
+  const now = Date.now();
+  const removed = getRemoved();
+  for (const h of getHistory()) removed.history[h.id] = now;
+  write(REMOVED_KEY, removed);
+  write(HISTORY_KEY, []);
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith(POS_PREFIX)) localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export function getLists(): Record<string, ListEntry> {
@@ -270,10 +293,45 @@ export function importState(incoming: Partial<LibraryState>, local = false) {
 }
 
 export type Audio = "sub" | "dub";
-export type Prefs = { autoplay: boolean; autoSkip: boolean; source?: string; audio?: Audio; hideSpoilers?: boolean };
+export type Prefs = {
+  /** Play the next episode when one ends. */
+  autoplay: boolean;
+  /** Start playing as soon as an episode opens. */
+  autoStart: boolean;
+  autoSkip: boolean;
+  audio?: Audio;
+  hideSpoilers: boolean;
+  /** Starting server for shows without their own choice; "" = automatic (first available). */
+  preferredSource: string;
+  /** Server picked per show (anime id → provider id); takes priority. */
+  sourceFor: Record<string, string>;
+  episodeLayout: "auto" | "list" | "grid";
+  /** Stop recording history and positions in this browser. */
+  pauseHistory: boolean;
+  /** Show Continue Watching on the home page. */
+  homeHistory: boolean;
+  /** Move "Watching"/"Re-watching" list progress along as episodes are finished. */
+  autoSyncList: boolean;
+  /** Share of an episode (0–1) that counts as watched. */
+  syncThreshold: number;
+};
+
+const DEFAULT_PREFS: Prefs = {
+  autoplay: true,
+  autoStart: true,
+  autoSkip: false,
+  hideSpoilers: true,
+  preferredSource: "",
+  sourceFor: {},
+  episodeLayout: "auto",
+  pauseHistory: false,
+  homeHistory: true,
+  autoSyncList: true,
+  syncThreshold: 0.8,
+};
 
 export function getPrefs(): Prefs {
-  return { autoplay: true, autoSkip: false, hideSpoilers: true, ...read<Partial<Prefs>>(PREFS_KEY, {}) };
+  return { ...DEFAULT_PREFS, ...read<Partial<Prefs>>(PREFS_KEY, {}) };
 }
 
 export function setPrefs(p: Partial<Prefs>) {

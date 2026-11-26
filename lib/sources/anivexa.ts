@@ -199,8 +199,10 @@ async function getAnivexaEpisodes(anime: AnimeRef): Promise<EpisodeInfo[]> {
 
   const url = `${BASE_URL}/episodes/${encodeURIComponent(anime.id)}`;
 
+  // Cached for 5 minutes: both Anivexa providers share one request, and repeat
+  // visits don't wait on the API (or its cold start).
   const response = await fetch(url, {
-    cache: "no-store",
+    next: { revalidate: 300 },
   });
 
   if (!response.ok) {

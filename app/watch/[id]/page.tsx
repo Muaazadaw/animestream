@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import WhereToWatch from "@/components/WhereToWatch";
 import { getAnime, prettyEnum, titleOf } from "@/lib/anilist";
 import { getEpisodeMeta } from "@/lib/extras";
-import { episodesFor, toAnimeRef } from "@/lib/sources";
+import { episodesFor, toAnimeRef, withTimeout } from "@/lib/sources";
 import WatchClient, { type Season } from "./WatchClient";
 
 type Props = {
@@ -25,7 +25,11 @@ export default async function WatchPage({ params, searchParams }: Props) {
   if (!m) notFound();
 
   const title = titleOf(m.title);
-  const [providers, meta] = await Promise.all([episodesFor(toAnimeRef(m)), getEpisodeMeta(m)]);
+  // Episode titles/stills are nice to have: don't wait more than a few seconds for them.
+  const [providers, meta] = await Promise.all([
+    episodesFor(toAnimeRef(m)),
+    withTimeout(getEpisodeMeta(m), 4000, "episode details").catch(() => ({})),
+  ]);
 
   // Prequels and sequels, in release order, around this entry.
   const seasons: Season[] = [

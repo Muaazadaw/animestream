@@ -27,6 +27,8 @@ type Props = {
   startAt?: number;
   autoSkip: boolean;
   autoplayNext: boolean;
+  /** Start playing as soon as the stream is ready. */
+  autoStart?: boolean;
   hasNext: boolean;
   onNext: () => void;
   onProgress: (time: number, duration: number) => void;
@@ -61,7 +63,7 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-export default function Player({ stream, poster, startAt, autoSkip, autoplayNext, hasNext, onNext, onProgress }: Props) {
+export default function Player({ stream, poster, startAt, autoSkip, autoplayNext, autoStart = true, hasNext, onNext, onProgress }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const plyrRef = useRef<Plyr | null>(null);
@@ -127,7 +129,8 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
 
     const resume = () => {
       if (startAt && startAt > 5 && (!video.duration || startAt < video.duration - 10)) video.currentTime = startAt;
-      video.play().catch(() => {});
+      if (autoStart) video.play().catch(() => {});
+      else setBuffering(false);
     };
 
     // Load Plyr's code while the stream starts downloading, not before.

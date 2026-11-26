@@ -183,6 +183,13 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   library: <path d="M5 4v16M10 4v16M15 5l4 15" />,
+  monitor: (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </>
+  ),
+  cloud: <path d="M7 18a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 8.5 4.75 4.75 0 0 1 17.5 18z" />,
   info: (
     <>
       <circle cx="12" cy="12" r="9" />

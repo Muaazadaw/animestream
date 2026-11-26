@@ -136,6 +136,11 @@ export default function LibraryPage() {
   const [info, setInfo] = useState<Record<number, AnimeInfo>>({});
   const [newList, setNewList] = useState("");
 
+  // /library?view=history (from Settings) opens Continue watching.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") === "history") setView("HISTORY");
+  }, []);
+
   // Year, score and airing status for the cards.
   const idsKey = entries.map((e) => e.id).sort((a, b) => a - b).join(",");
   useEffect(() => {

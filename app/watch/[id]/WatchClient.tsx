@@ -12,6 +12,7 @@ import {
   getLists,
   getPosition,
   getPrefs,
+  isWatched,
   saveProgress,
   setPrefs,
   STORAGE_EVENT,
@@ -52,7 +53,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
   const [startAt, setStartAt] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [prefs, setPrefsState] = useState({ autoplay: true, autoSkip: false, hideSpoilers: true });
+  const [prefs, setPrefsState] = useState({ autoplay: true, autoStart: true, autoSkip: false, hideSpoilers: true });
   const [filter, setFilter] = useState("");
   const [chunk, setChunk] = useState(0);
   const [desc, setDesc] = useState(false);
@@ -72,18 +73,20 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
   // On first mount: restore prefs, preferred server/audio and last-watched episode.
   useEffect(() => {
     const p = getPrefs();
-    setPrefsState({ autoplay: p.autoplay, autoSkip: p.autoSkip, hideSpoilers: p.hideSpoilers ?? true });
+    setPrefsState({ autoplay: p.autoplay, autoStart: p.autoStart, autoSkip: p.autoSkip, hideSpoilers: p.hideSpoilers });
     const a = initialAudio ?? p.audio ?? "sub";
     setAudio(a);
-    if (!initialSource && p.source) {
-      const saved = providers.find((x) => x.id === p.source && hasAudio(x, a));
+    // This show's own server choice first, then the preferred server from Settings.
+    if (!initialSource) {
+      const wanted = [p.sourceFor[anime.id], p.preferredSource].filter(Boolean);
+      const saved = wanted.map((id) => providers.find((x) => x.id === id && hasAudio(x, a))).find(Boolean);
       if (saved) setSourceId(saved.id);
     }
     if (!initialEp) {
       const h = getHistory().find((x) => x.id === anime.id);
       if (h) setEp(h.episode);
     }
-    if (providers[0].episodes.length > CHUNK) setView("grid");
+    if (p.episodeLayout === "grid" || (p.episodeLayout === "auto" && providers[0].episodes.length > CHUNK)) setView("grid");
     setMounted(true);
     const sync = () => bump((n) => n + 1);
     window.addEventListener(STORAGE_EVENT, sync);
@@ -141,7 +144,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
 
   function pickSource(id: string) {
     setSourceId(id);
-    setPrefs({ source: id });
+    setPrefs({ sourceFor: { ...getPrefs().sourceFor, [anime.id]: id } });
   }
 
   function pickAudio(a: Audio) {
@@ -192,6 +195,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
               startAt={startAt}
               autoSkip={prefs.autoSkip}
               autoplayNext={prefs.autoplay}
+              autoStart={prefs.autoStart}
               hasNext={!!next}
               onNext={() => next && setEp(next.number)}
               onProgress={(time, duration) =>
@@ -395,7 +399,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
             <div className={`episodes__list ${view === "grid" ? "episodes__list--grid" : ""}`}>
               {visible.map((e) => {
                 const pos = mounted ? getPosition(anime.id, e.number) : null;
-                const watched = (pos && pos.d ? pos.t / pos.d > 0.9 : false) || e.number <= listProgress;
+                const watched = (pos ? isWatched(pos.t, pos.d) : false) || e.number <= listProgress;
                 const m = meta[e.number];
                 const title = m?.title ?? e.title ?? `Episode ${e.number}`;
                 const active = e.number === ep;

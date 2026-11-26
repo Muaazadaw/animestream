@@ -28,13 +28,26 @@ export async function animeRef(id: number): Promise<AnimeRef | null> {
 
 export type ProviderEpisodes = { id: string; name: string; audio: Audio[]; tags: string[]; episodes: EpisodeInfo[] };
 
-/** Episode lists from every enabled provider; a failing provider is skipped. */
+/** How long the watch page waits for one provider's episode list. */
+const EPISODES_TIMEOUT_MS = 6000;
+
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
+  ]);
+}
+
+/**
+ * Episode lists from every enabled provider. A failing or slow provider (e.g.
+ * an API waking from a cold start) is skipped rather than holding up the page.
+ */
 export async function episodesFor(anime: AnimeRef): Promise<ProviderEpisodes[]> {
   const results = await Promise.all(
     enabledProviders().map(async (p) => {
       const base = { id: p.id, name: p.name, audio: p.audio ?? (["sub"] as Audio[]), tags: p.tags ?? [] };
       try {
-        return { ...base, episodes: await p.getEpisodes(anime) };
+        return { ...base, episodes: await withTimeout(p.getEpisodes(anime), EPISODES_TIMEOUT_MS, p.id) };
       } catch (e) {
         console.error(`[sources] ${p.id} getEpisodes failed`, e);
         return { ...base, episodes: [] };
