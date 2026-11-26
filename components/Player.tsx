@@ -68,6 +68,7 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
   const [skip, setSkip] = useState<"intro" | "outro" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nextIn, setNextIn] = useState<number | null>(null);
+  const [buffering, setBuffering] = useState(true);
   const [subs, setSubs] = useState<SubtitleSettings>(DEFAULT_SUBTITLE_SETTINGS);
   const [showSubs, setShowSubs] = useState(false);
 
@@ -97,6 +98,7 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
     setSkip(null);
     setNextIn(null);
     setError(null);
+    setBuffering(true);
 
     const video = document.createElement("video");
     video.setAttribute("playsinline", "");
@@ -125,16 +127,25 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
       video.play().catch(() => {});
     };
 
-    void (async () => {
-      const { default: PlyrCtor } = await import("plyr");
-      if (cancelled) return;
+    // Load Plyr's code while the stream starts downloading, not before.
+    const plyrModule = import("plyr");
 
+    void (async () => {
       // Quality menu: hls.js levels, or one option per mp4 source. 0 = Auto.
       let qualityOptions: number[] = [];
       let levelByHeight = new Map<number, number>();
 
       if (src.type === "hls" && Hls.isSupported()) {
-        hls = new Hls({ enableWorker: true, capLevelToPlayerSize: true });
+        hls = new Hls({
+          enableWorker: true,
+          capLevelToPlayerSize: true,
+          // Start on the lightest quality so the first frame comes quickly;
+          // auto quality then steps up as bandwidth allows.
+          startLevel: 0,
+          startFragPrefetch: true,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 120,
+        });
         let recoveries = 0;
         await new Promise<void>((resolve) => {
           hls!.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
@@ -164,6 +175,7 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
           qualityOptions = stream.sources.map((s, i) => parseInt(s.quality ?? "") || i + 1);
         }
       }
+      const { default: PlyrCtor } = await plyrModule;
       if (cancelled) return;
 
       const plyr = new PlyrCtor(video, {
@@ -229,15 +241,23 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
       if (cb.current.autoplayNext && cb.current.hasNext) setNextIn(5);
     };
     const onPause = () => video.duration && cb.current.onProgress(video.currentTime, video.duration);
+    const onWaiting = () => setBuffering(true);
+    const onReady = () => setBuffering(false);
     video.addEventListener("timeupdate", onTime);
     video.addEventListener("ended", onEnded);
     video.addEventListener("pause", onPause);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("playing", onReady);
+    video.addEventListener("canplay", onReady);
 
     return () => {
       cancelled = true;
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("pause", onPause);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("playing", onReady);
+      video.removeEventListener("canplay", onReady);
       hls?.destroy();
       plyrRef.current?.destroy();
       plyrRef.current = null;
@@ -335,6 +355,8 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
             </div>
           </div>
         ) : null}
+
+        {buffering && !error ? <div className="spinner player__spinner player__spinner--center" /> : null}
 
         {error ? <div className="player__error">{error}</div> : null}
 

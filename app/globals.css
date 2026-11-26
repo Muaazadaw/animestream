@@ -654,3 +654,4 @@ video::cue {
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .section-head .muted { font-size: 14px; }
 .card__status { background: none; border: 0; color: var(--muted); font-size: 13px; cursor: pointer; max-width: 110px; }
+.player__spinner--center { top: calc(50% - 21px); left: calc(50% - 21px); z-index: 4; }
