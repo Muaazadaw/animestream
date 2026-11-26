@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAccount } from "@/lib/sync";
+import { Icon } from "./Menu";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -16,6 +18,7 @@ export default function Header() {
   const pathname = usePathname();
   const [q, setQ] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  const { user, status } = useAccount();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -61,6 +64,15 @@ export default function Header() {
             </svg>
           </button>
         </form>
+        <Link
+          href="/account"
+          className={`account-link ${pathname.startsWith("/account") ? "active" : ""}`}
+          title={user ? `Signed in as ${user}` : "Sign in / import lists"}
+        >
+          <Icon name="user" size={18} />
+          <span>{user ?? "Sign in"}</span>
+          {user && status === "syncing" ? <i className="account-link__dot" /> : null}
+        </Link>
       </div>
     </header>
   );

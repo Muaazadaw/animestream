@@ -9,3 +9,6 @@ next-env.d.ts
 hosting
 upload-to-github
 animestream.zip
+
+# Local account database (lib/db.ts file fallback)
+.data

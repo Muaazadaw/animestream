@@ -18,7 +18,11 @@ export type EpisodeInfo = {
   thumbnail?: string;
   /** true for filler episodes, if your source knows. */
   filler?: boolean;
+  /** true if a dubbed version of this episode exists on this source. */
+  dub?: boolean;
 };
+
+export type Audio = "sub" | "dub";
 
 export type StreamSource = {
   url: string;
@@ -49,10 +53,14 @@ export interface SourceProvider {
   id: string;
   /** Name shown on the server picker. */
   name: string;
+  /** Audio tracks this provider can serve. Defaults to ["sub"]. */
+  audio?: Audio[];
+  /** Short badges on the server picker, e.g. "s-sub" (soft subs), "h-sub" (hard subs), "dl". */
+  tags?: string[];
   /** Return false to hide the provider (e.g. when its config is missing). */
   isEnabled(): boolean;
   /** Episodes this provider has for the given anime. Return [] if none. */
   getEpisodes(anime: AnimeRef): Promise<EpisodeInfo[]>;
   /** A playable stream for one episode, or null if unavailable. */
-  getStream(anime: AnimeRef, episode: number): Promise<Stream | null>;
+  getStream(anime: AnimeRef, episode: number, audio?: Audio): Promise<Stream | null>;
 }

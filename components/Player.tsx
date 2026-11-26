@@ -1,18 +1,20 @@
 "use client";
 
 import Hls from "hls.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type Plyr from "plyr";
+import "plyr/dist/plyr.css";
+import { useEffect, useRef, useState } from "react";
 import type { Stream } from "@/lib/sources/types";
 
-type Quality = { id: number; label: string };
+// Video player built on Plyr (controls, captions, settings, keyboard) with
+// hls.js for adaptive streams. The <video> element is created imperatively,
+// because Plyr rewraps it in its own markup that React must not touch.
 
 type SubtitleSettings = {
-  enabled: boolean;
   fontSize: number;
   textColor: string;
   backgroundColor: string;
   backgroundOpacity: number;
-  outlineColor: string;
   outlineWidth: number;
   bottomOffset: number;
   delay: number;
@@ -30,15 +32,11 @@ type Props = {
   onProgress: (time: number, duration: number) => void;
 };
 
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-
 const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
-  enabled: true,
   fontSize: 18,
   textColor: "#ffffff",
   backgroundColor: "#000000",
   backgroundOpacity: 0.6,
-  outlineColor: "#000000",
   outlineWidth: 2,
   bottomOffset: 8,
   delay: 0,
@@ -47,436 +45,276 @@ const DEFAULT_SUBTITLE_SETTINGS: SubtitleSettings = {
 const SUBTITLE_STORAGE_KEY = "animestream:subtitle-settings";
 
 function loadSubtitleSettings(): SubtitleSettings {
-  if (typeof window === "undefined") return DEFAULT_SUBTITLE_SETTINGS;
-
   try {
     const saved = window.localStorage.getItem(SUBTITLE_STORAGE_KEY);
-    if (!saved) return DEFAULT_SUBTITLE_SETTINGS;
-
-    return {
-      ...DEFAULT_SUBTITLE_SETTINGS,
-      ...JSON.parse(saved),
-    };
+    return saved ? { ...DEFAULT_SUBTITLE_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SUBTITLE_SETTINGS;
   } catch {
     return DEFAULT_SUBTITLE_SETTINGS;
   }
 }
 
-export default function Player({
-  stream,
-  poster,
-  startAt,
-  autoSkip,
-  autoplayNext,
-  hasNext,
-  onNext,
-  onProgress,
-}: Props) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+function hexToRgba(hex: string, alpha: number) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+export default function Player({ stream, poster, startAt, autoSkip, autoplayNext, hasNext, onNext, onProgress }: Props) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const plyrRef = useRef<Plyr | null>(null);
   const lastSaved = useRef(0);
   const skipped = useRef({ intro: false, outro: false });
-
-  const [qualities, setQualities] = useState<Quality[]>([]);
-  const [quality, setQuality] = useState(-1);
-  const [activeLevel, setActiveLevel] = useState<string>("");
-  const [speed, setSpeed] = useState(1);
+  const appliedDelay = useRef(0);
   const [skip, setSkip] = useState<"intro" | "outro" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [buffering, setBuffering] = useState(true);
   const [nextIn, setNextIn] = useState<number | null>(null);
+  const [subs, setSubs] = useState<SubtitleSettings>(DEFAULT_SUBTITLE_SETTINGS);
+  const [showSubs, setShowSubs] = useState(false);
 
-  const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>(
-    DEFAULT_SUBTITLE_SETTINGS,
-  );
-  const [showSubtitleSettings, setShowSubtitleSettings] = useState(false);
+  const cb = useRef({ onProgress, onNext, autoSkip, autoplayNext, hasNext, stream });
+  cb.current = { onProgress, onNext, autoSkip, autoplayNext, hasNext, stream };
 
-  const cb = useRef({ onProgress, onNext, autoSkip, autoplayNext, hasNext });
-  cb.current = { onProgress, onNext, autoSkip, autoplayNext, hasNext };
-
-  useEffect(() => {
-    setSubtitleSettings(loadSubtitleSettings());
-  }, []);
+  useEffect(() => setSubs(loadSubtitleSettings()), []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
     try {
-      window.localStorage.setItem(
-        SUBTITLE_STORAGE_KEY,
-        JSON.stringify(subtitleSettings),
-      );
+      window.localStorage.setItem(SUBTITLE_STORAGE_KEY, JSON.stringify(subs));
     } catch {
-      // Ignore private browsing or storage errors.
+      /* private browsing */
     }
-  }, [subtitleSettings]);
+  }, [subs]);
 
-  const load = useCallback(
-    (srcIndex: number, resumeAt: number | undefined) => {
-      const video = videoRef.current;
-      if (!video) return;
-
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
-      setError(null);
-      setBuffering(true);
-
-      const src = stream.sources[srcIndex] ?? stream.sources[0];
-      if (!src) {
-        setError("No playable source for this episode.");
-        return;
-      }
-
-      const seekAndPlay = () => {
-        if (
-          resumeAt &&
-          resumeAt > 5 &&
-          (!video.duration || resumeAt < video.duration - 10)
-        ) {
-          video.currentTime = resumeAt;
-        }
-
-        video.playbackRate = speed;
-        video.play().catch(() => {});
-      };
-
-      if (src.type === "hls" && Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          capLevelToPlayerSize: true,
-        });
-
-        hlsRef.current = hls;
-        let mediaRecoveries = 0;
-
-        hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-          const ladder = data.levels
-            .map((level, id) => ({
-              id,
-              label: level.height
-                ? `${level.height}p`
-                : `${Math.round(level.bitrate / 1000)} kbps`,
-            }))
-            .sort(
-              (a, b) => parseInt(b.label) - parseInt(a.label),
-            );
-
-          setQualities(ladder);
-          setQuality(-1);
-          video.addEventListener("loadedmetadata", seekAndPlay, {
-            once: true,
-          });
-        });
-
-        hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
-          const level = hls.levels[data.level];
-          setActiveLevel(level?.height ? `${level.height}p` : "");
-        });
-
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (!data.fatal) return;
-
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            hls.startLoad();
-          } else if (
-            data.type === Hls.ErrorTypes.MEDIA_ERROR &&
-            mediaRecoveries++ < 2
-          ) {
-            hls.recoverMediaError();
-          } else {
-            setError("This stream failed to load. Try another server.");
-            hls.destroy();
-          }
-        });
-
-        hls.loadSource(src.url);
-        hls.attachMedia(video);
-      } else {
-        if (
-          src.type === "hls" &&
-          !video.canPlayType("application/vnd.apple.mpegurl")
-        ) {
-          setError("Your browser can't play this stream.");
-          return;
-        }
-
-        if (src.type === "mp4") {
-          setQualities(
-            stream.sources.length > 1
-              ? stream.sources.map((source, id) => ({
-                  id,
-                  label: source.quality ?? `Source ${id + 1}`,
-                }))
-              : [],
-          );
-        } else {
-          setQualities([]);
-        }
-
-        setActiveLevel(src.quality ?? "");
-        video.src = src.url;
-        video.addEventListener("loadedmetadata", seekAndPlay, {
-          once: true,
-        });
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream],
-  );
-
+  // Build video + Plyr (+ hls.js) for each stream.
   useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let cancelled = false;
+    let hls: Hls | null = null;
+
     skipped.current = { intro: false, outro: false };
     lastSaved.current = 0;
+    appliedDelay.current = 0;
     setSkip(null);
     setNextIn(null);
-    setQuality(-1);
+    setError(null);
 
-    load(0, startAt);
+    const video = document.createElement("video");
+    video.setAttribute("playsinline", "");
+    video.crossOrigin = "anonymous";
+    if (poster) video.poster = poster;
+    for (const t of stream.subtitles ?? []) {
+      const track = document.createElement("track");
+      track.kind = "captions";
+      track.src = t.url;
+      track.srclang = t.lang;
+      track.label = t.label;
+      if (t.default) track.default = true;
+      video.appendChild(track);
+    }
+    host.appendChild(video);
+    videoRef.current = video;
 
-    const video = videoRef.current;
+    const src = stream.sources[0];
+    if (!src) {
+      setError("No playable source for this episode.");
+      return;
+    }
 
-    return () => {
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
+    const resume = () => {
+      if (startAt && startAt > 5 && (!video.duration || startAt < video.duration - 10)) video.currentTime = startAt;
+      video.play().catch(() => {});
+    };
 
-      if (video) {
-        video.removeAttribute("src");
-        video.load();
+    void (async () => {
+      const { default: PlyrCtor } = await import("plyr");
+      if (cancelled) return;
+
+      // Quality menu: hls.js levels, or one option per mp4 source. 0 = Auto.
+      let qualityOptions: number[] = [];
+      let levelByHeight = new Map<number, number>();
+
+      if (src.type === "hls" && Hls.isSupported()) {
+        hls = new Hls({ enableWorker: true, capLevelToPlayerSize: true });
+        let recoveries = 0;
+        await new Promise<void>((resolve) => {
+          hls!.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+            levelByHeight = new Map(data.levels.map((l, i) => [l.height, i]));
+            qualityOptions = [0, ...[...levelByHeight.keys()].filter(Boolean).sort((a, b) => b - a)];
+            resolve();
+          });
+          hls!.on(Hls.Events.ERROR, (_e, data) => {
+            if (!data.fatal) return;
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls!.startLoad();
+            else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && recoveries++ < 2) hls!.recoverMediaError();
+            else {
+              setError("This stream failed to load. Try another server.");
+              hls!.destroy();
+              resolve();
+            }
+          });
+          hls!.loadSource(src.url);
+          hls!.attachMedia(video);
+        });
+      } else if (src.type === "hls" && !video.canPlayType("application/vnd.apple.mpegurl")) {
+        setError("Your browser can't play this stream.");
+        return;
+      } else {
+        video.src = src.url;
+        if (src.type === "mp4" && stream.sources.length > 1) {
+          qualityOptions = stream.sources.map((s, i) => parseInt(s.quality ?? "") || i + 1);
+        }
+      }
+      if (cancelled) return;
+
+      const plyr = new PlyrCtor(video, {
+        controls: [
+          "play-large", "play", "rewind", "fast-forward", "progress", "current-time", "duration",
+          "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen",
+        ],
+        settings: ["captions", "quality", "speed"],
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+        seekTime: 10,
+        keyboard: { focused: true, global: true },
+        tooltips: { controls: true, seek: true },
+        captions: { active: true, update: true, language: "auto" },
+        invertTime: false,
+        // Fullscreen the wrapper so the skip / next-episode overlays stay visible.
+        fullscreen: { enabled: true, fallback: true, iosNative: true, container: ".player--plyr" },
+        i18n: { qualityLabel: { 0: "Auto" } },
+        quality: qualityOptions.length
+          ? {
+              default: qualityOptions[0],
+              options: qualityOptions,
+              forced: true,
+              onChange: (q: number) => {
+                if (hls) hls.currentLevel = q === 0 ? -1 : levelByHeight.get(q) ?? -1;
+                else {
+                  const i = qualityOptions.indexOf(q);
+                  const s = stream.sources[i];
+                  if (s && video.src !== s.url) {
+                    const t = video.currentTime;
+                    video.src = s.url;
+                    video.addEventListener("loadedmetadata", () => ((video.currentTime = t), video.play().catch(() => {})), { once: true });
+                  }
+                }
+              },
+            }
+          : undefined,
+      });
+      plyrRef.current = plyr;
+
+      video.addEventListener("loadedmetadata", resume, { once: true });
+      if (video.readyState >= 1) resume();
+    })();
+
+    const onTime = () => {
+      if (!video.duration) return;
+      const time = video.currentTime;
+      const s = cb.current.stream;
+      const inRange = (r?: { start: number; end: number }) => !!r && time >= r.start && time < r.end - 1;
+      let which: "intro" | "outro" | null = inRange(s.intro) ? "intro" : inRange(s.outro) ? "outro" : null;
+      if (which && cb.current.autoSkip && !skipped.current[which]) {
+        skipped.current[which] = true;
+        doSkip(which);
+        which = null;
+      }
+      setSkip(which);
+      if (Math.abs(time - lastSaved.current) >= 5) {
+        lastSaved.current = time;
+        cb.current.onProgress(time, video.duration);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load]);
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = speed;
-    }
-  }, [speed]);
-
-  function changeQuality(id: number) {
-    setQuality(id);
-
-    const hls = hlsRef.current;
-
-    if (hls) {
-      hls.currentLevel = id;
-    } else if (stream.sources[id]) {
-      const time = videoRef.current?.currentTime ?? 0;
-      load(id, time);
-    }
-  }
-
-  function onTimeUpdate() {
-    const video = videoRef.current;
-    if (!video || !video.duration) return;
-
-    const time = video.currentTime;
-
-    const inRange = (range?: { start: number; end: number }) =>
-      !!range && time >= range.start && time < range.end - 1;
-
-    let which: "intro" | "outro" | null = null;
-
-    if (inRange(stream.intro)) which = "intro";
-    else if (inRange(stream.outro)) which = "outro";
-
-    if (which && cb.current.autoSkip && !skipped.current[which]) {
-      skipped.current[which] = true;
-      doSkip(which);
-      which = null;
-    }
-
-    setSkip(which);
-
-    if (Math.abs(time - lastSaved.current) >= 5) {
-      lastSaved.current = time;
-      cb.current.onProgress(time, video.duration);
-    }
-  }
-
-  function doSkip(which: "intro" | "outro") {
-    const video = videoRef.current;
-    const range = which === "intro" ? stream.intro : stream.outro;
-
-    if (!video || !range) return;
-
-    video.currentTime = Math.min(range.end, video.duration - 0.5);
-    setSkip(null);
-  }
-
-  function onEnded() {
-    const video = videoRef.current;
-
-    if (video) {
+    const onEnded = () => {
       cb.current.onProgress(video.duration, video.duration);
-    }
+      if (cb.current.autoplayNext && cb.current.hasNext) setNextIn(5);
+    };
+    const onPause = () => video.duration && cb.current.onProgress(video.currentTime, video.duration);
+    video.addEventListener("timeupdate", onTime);
+    video.addEventListener("ended", onEnded);
+    video.addEventListener("pause", onPause);
 
-    if (cb.current.autoplayNext && cb.current.hasNext) {
-      setNextIn(5);
-    }
-  }
+    return () => {
+      cancelled = true;
+      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("ended", onEnded);
+      video.removeEventListener("pause", onPause);
+      hls?.destroy();
+      plyrRef.current?.destroy();
+      plyrRef.current = null;
+      video.removeAttribute("src");
+      video.load();
+      host.innerHTML = "";
+      videoRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream]);
+
+  // Shift subtitle cues when the delay setting changes (and once tracks load).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const apply = () => {
+      const diff = subs.delay - appliedDelay.current;
+      if (!diff) return;
+      for (const track of Array.from(video.textTracks)) {
+        for (const cue of Array.from(track.cues ?? [])) {
+          cue.startTime = Math.max(0, cue.startTime + diff);
+          cue.endTime = Math.max(0, cue.endTime + diff);
+        }
+      }
+      appliedDelay.current = subs.delay;
+    };
+    apply();
+    const tracks = Array.from(video.querySelectorAll("track"));
+    tracks.forEach((t) => t.addEventListener("load", apply));
+    return () => tracks.forEach((t) => t.removeEventListener("load", apply));
+  }, [subs.delay, stream]);
 
   useEffect(() => {
     if (nextIn === null) return;
-
     if (nextIn <= 0) {
       setNextIn(null);
       cb.current.onNext();
       return;
     }
-
-    const timer = setTimeout(() => {
-      setNextIn((current) => (current === null ? null : current - 1));
-    }, 1000);
-
+    const timer = setTimeout(() => setNextIn((n) => (n === null ? null : n - 1)), 1000);
     return () => clearTimeout(timer);
   }, [nextIn]);
 
-  const toggleFullscreen = useCallback(() => {
-    const element = wrapRef.current;
-    if (!element) return;
-
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else {
-      element.requestFullscreen?.().catch(() => {});
-    }
-  }, []);
-
+  // Shortcuts Plyr doesn't have: S skips intro/outro, N plays the next episode.
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "s" && skip) doSkip(skip);
+      if (k === "n" && cb.current.hasNext) cb.current.onNext();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
 
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey
-      ) {
-        return;
-      }
+  function doSkip(which: "intro" | "outro") {
+    const video = videoRef.current;
+    const range = which === "intro" ? cb.current.stream.intro : cb.current.stream.outro;
+    if (!video || !range) return;
+    video.currentTime = Math.min(range.end, video.duration - 0.5);
+    setSkip(null);
+  }
 
-      const video = videoRef.current;
-      if (!video) return;
-
-      switch (event.key.toLowerCase()) {
-        case " ":
-        case "k":
-          event.preventDefault();
-
-          if (video.paused) {
-            video.play().catch(() => {});
-          } else {
-            video.pause();
-          }
-
-          break;
-
-        case "arrowleft":
-          event.preventDefault();
-          video.currentTime = Math.max(0, video.currentTime - 5);
-          break;
-
-        case "arrowright":
-          event.preventDefault();
-          video.currentTime = Math.min(
-            video.duration || Number.POSITIVE_INFINITY,
-            video.currentTime + 5,
-          );
-          break;
-
-        case "j":
-          video.currentTime = Math.max(0, video.currentTime - 10);
-          break;
-
-        case "l":
-          video.currentTime = Math.min(
-            video.duration || Number.POSITIVE_INFINITY,
-            video.currentTime + 10,
-          );
-          break;
-
-        case "m":
-          video.muted = !video.muted;
-          break;
-
-        case "f":
-          toggleFullscreen();
-          break;
-
-        case "s":
-          if (skip) doSkip(skip);
-          break;
-
-        case "n":
-          if (cb.current.hasNext) cb.current.onNext();
-          break;
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skip, toggleFullscreen]);
-
-  const needsCors = (stream.subtitles?.length ?? 0) > 0;
-
-  const subtitleStyle = {
-    "--subtitle-font-size": `${subtitleSettings.fontSize}px`,
-    "--subtitle-text-color": subtitleSettings.textColor,
-    "--subtitle-bg-color": subtitleSettings.backgroundColor,
-    "--subtitle-bg-opacity": subtitleSettings.backgroundOpacity,
-    "--subtitle-outline-color": subtitleSettings.outlineColor,
-    "--subtitle-outline-width": `${subtitleSettings.outlineWidth}px`,
-    "--subtitle-bottom-offset": `${subtitleSettings.bottomOffset}%`,
+  const update = (p: Partial<SubtitleSettings>) => setSubs((s) => ({ ...s, ...p }));
+  const subStyle = {
+    "--sub-size": `${subs.fontSize}px`,
+    "--sub-color": subs.textColor,
+    "--sub-bg": hexToRgba(subs.backgroundColor, subs.backgroundOpacity),
+    "--sub-outline": `${subs.outlineWidth}px`,
+    "--sub-bottom": `${subs.bottomOffset}%`,
   } as React.CSSProperties;
 
   return (
-    <div className="player-wrap" style={subtitleStyle}>
-      <div className="player" ref={wrapRef}>
-        <video
-          ref={videoRef}
-          poster={poster}
-          controls
-          playsInline
-          controlsList="nofullscreen nodownload"
-          crossOrigin={needsCors ? "anonymous" : undefined}
-          onTimeUpdate={onTimeUpdate}
-          onEnded={onEnded}
-          onError={() => {
-            if (
-              !hlsRef.current &&
-              videoRef.current?.getAttribute("src")
-            ) {
-              setError(
-                "This video failed to load. Try another quality or server.",
-              );
-            }
-          }}
-          onWaiting={() => setBuffering(true)}
-          onPlaying={() => setBuffering(false)}
-          onCanPlay={() => setBuffering(false)}
-          onDoubleClick={toggleFullscreen}
-        >
-          {stream.subtitles?.map((subtitle) => (
-            <track
-              key={subtitle.url}
-              kind="subtitles"
-              src={subtitle.url}
-              srcLang={subtitle.lang}
-              label={subtitle.label}
-              default={subtitle.default}
-            />
-          ))}
-        </video>
-
-        {buffering && !error ? (
-          <div className="player__spinner spinner" aria-hidden />
-        ) : null}
+    <div className="player-wrap">
+      <div className="player player--plyr" style={subStyle}>
+        <div ref={hostRef} className="player__host" />
 
         {skip ? (
           <button className="player__skip" onClick={() => doSkip(skip)}>
@@ -486,18 +324,12 @@ export default function Player({
 
         {nextIn !== null ? (
           <div className="player__next">
-            <p>Next episode in {nextIn}...</p>
+            Next episode in {nextIn}…
             <div>
-              <button
-                className="btn btn--primary"
-                onClick={() => setNextIn(0)}
-              >
+              <button className="btn btn--primary btn--sm" onClick={() => (setNextIn(null), cb.current.onNext())}>
                 Play now
               </button>
-              <button
-                className="btn"
-                onClick={() => setNextIn(null)}
-              >
+              <button className="btn btn--sm" onClick={() => setNextIn(null)}>
                 Cancel
               </button>
             </div>
@@ -506,232 +338,48 @@ export default function Player({
 
         {error ? <div className="player__error">{error}</div> : null}
 
-        {showSubtitleSettings ? (
-          <div className="subtitle-settings">
-            <div className="subtitle-settings__header">
-              <strong>Subtitle settings</strong>
-              <button
-                className="btn btn--sm"
-                onClick={() => setShowSubtitleSettings(false)}
-              >
+        {stream.subtitles?.length ? (
+          <button className="player__subs-btn" onClick={() => setShowSubs((s) => !s)} title="Subtitle style">
+            Aa
+          </button>
+        ) : null}
+        {showSubs ? (
+          <div className="player__subs">
+            <div className="player__subs-head">
+              <strong>Subtitle style</strong>
+              <button className="link-btn" onClick={() => setSubs(DEFAULT_SUBTITLE_SETTINGS)}>
+                Reset
+              </button>
+              <button className="link-btn" onClick={() => setShowSubs(false)}>
                 Close
               </button>
             </div>
-
-            <label className="subtitle-settings__row">
-              <input
-                type="checkbox"
-                checked={subtitleSettings.enabled}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    enabled: event.target.checked,
-                  }))
-                }
-              />
-              Show subtitles
+            <label>
+              Size <input type="range" min={12} max={40} value={subs.fontSize} onChange={(e) => update({ fontSize: +e.target.value })} />
             </label>
-
-            <label className="subtitle-settings__row">
-              Font size
-              <input
-                type="range"
-                min={12}
-                max={40}
-                value={subtitleSettings.fontSize}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    fontSize: Number(event.target.value),
-                  }))
-                }
-              />
-              <span>{subtitleSettings.fontSize}px</span>
+            <label>
+              Text <input type="color" value={subs.textColor} onChange={(e) => update({ textColor: e.target.value })} />
             </label>
-
-            <label className="subtitle-settings__row">
-              Text color
-              <input
-                type="color"
-                value={subtitleSettings.textColor}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    textColor: event.target.value,
-                  }))
-                }
-              />
+            <label>
+              Background <input type="color" value={subs.backgroundColor} onChange={(e) => update({ backgroundColor: e.target.value })} />
             </label>
-
-            <label className="subtitle-settings__row">
-              Background color
-              <input
-                type="color"
-                value={subtitleSettings.backgroundColor}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    backgroundColor: event.target.value,
-                  }))
-                }
-              />
+            <label>
+              Opacity
+              <input type="range" min={0} max={1} step={0.05} value={subs.backgroundOpacity} onChange={(e) => update({ backgroundOpacity: +e.target.value })} />
             </label>
-
-            <label className="subtitle-settings__row">
-              Background opacity
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={subtitleSettings.backgroundOpacity}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    backgroundOpacity: Number(event.target.value),
-                  }))
-                }
-              />
-              <span>
-                {Math.round(subtitleSettings.backgroundOpacity * 100)}%
-              </span>
+            <label>
+              Outline <input type="range" min={0} max={4} value={subs.outlineWidth} onChange={(e) => update({ outlineWidth: +e.target.value })} />
             </label>
-
-            <label className="subtitle-settings__row">
-              Outline color
-              <input
-                type="color"
-                value={subtitleSettings.outlineColor}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    outlineColor: event.target.value,
-                  }))
-                }
-              />
+            <label>
+              Position <input type="range" min={0} max={40} value={subs.bottomOffset} onChange={(e) => update({ bottomOffset: +e.target.value })} />
             </label>
-
-            <label className="subtitle-settings__row">
-              Outline width
-              <input
-                type="range"
-                min={0}
-                max={6}
-                value={subtitleSettings.outlineWidth}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    outlineWidth: Number(event.target.value),
-                  }))
-                }
-              />
-              <span>{subtitleSettings.outlineWidth}px</span>
+            <label>
+              Delay {subs.delay > 0 ? "+" : ""}
+              {subs.delay.toFixed(1)}s
+              <input type="range" min={-10} max={10} step={0.1} value={subs.delay} onChange={(e) => update({ delay: +e.target.value })} />
             </label>
-
-            <label className="subtitle-settings__row">
-              Position from bottom
-              <input
-                type="range"
-                min={0}
-                max={40}
-                value={subtitleSettings.bottomOffset}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    bottomOffset: Number(event.target.value),
-                  }))
-                }
-              />
-              <span>{subtitleSettings.bottomOffset}%</span>
-            </label>
-
-            <label className="subtitle-settings__row">
-              Subtitle delay
-              <input
-                type="range"
-                min={-10}
-                max={10}
-                step={0.1}
-                value={subtitleSettings.delay}
-                onChange={(event) =>
-                  setSubtitleSettings((current) => ({
-                    ...current,
-                    delay: Number(event.target.value),
-                  }))
-                }
-              />
-              <span>{subtitleSettings.delay}s</span>
-            </label>
-
-            <button
-              className="btn btn--sm"
-              onClick={() =>
-                setSubtitleSettings(DEFAULT_SUBTITLE_SETTINGS)
-              }
-            >
-              Reset to default
-            </button>
           </div>
         ) : null}
-      </div>
-
-      <div className="player__bar">
-        {qualities.length > 0 ? (
-          <label>
-            Quality
-            <select
-              value={quality}
-              onChange={(event) =>
-                changeQuality(Number(event.target.value))
-              }
-            >
-              {hlsRef.current ? (
-                <option value={-1}>
-                  Auto
-                  {activeLevel ? ` (${activeLevel})` : ""}
-                </option>
-              ) : null}
-
-              {qualities.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : activeLevel ? (
-          <span className="muted">{activeLevel}</span>
-        ) : null}
-
-        <label>
-          Speed
-          <select
-            value={speed}
-            onChange={(event) => setSpeed(Number(event.target.value))}
-          >
-            {SPEEDS.map((value) => (
-              <option key={value} value={value}>
-                {value}x
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button
-          className="btn btn--sm"
-          onClick={() => setShowSubtitleSettings((current) => !current)}
-        >
-          Subtitles
-        </button>
-
-        <button className="btn btn--sm" onClick={toggleFullscreen}>
-          Fullscreen
-        </button>
-
-        <span className="player__keys muted">
-          Space play · Left/Right 5s · J/L 10s · F fullscreen · S skip · N
-          next
-        </span>
       </div>
     </div>
   );

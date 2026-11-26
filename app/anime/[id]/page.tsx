@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AnimeCard from "@/components/AnimeCard";
+import Artwork from "@/components/Artwork";
+import Characters from "@/components/Characters";
 import Countdown from "@/components/Countdown";
 import Row from "@/components/Row";
 import Trailer from "@/components/Trailer";
 import WatchlistButton from "@/components/WatchlistButton";
 import WhereToWatch from "@/components/WhereToWatch";
+import { getArtwork, getCharacters, getEpisodeMeta } from "@/lib/extras";
 import { airedEpisodes, getAnime, plainText, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
 
 type Props = { params: Promise<{ id: string }> };
@@ -22,6 +25,10 @@ export default async function AnimePage({ params }: Props) {
   const m = await getAnime(id);
   if (!m) notFound();
 
+  const [characters, artwork] = await Promise.all([
+    getCharacters(m.id),
+    getEpisodeMeta(m).then((eps) => getArtwork(m, eps)),
+  ]);
   const title = titleOf(m.title);
   const aired = airedEpisodes(m);
   const relations = m.relations.edges.filter((e) => e.node.type === "ANIME");
@@ -104,25 +111,9 @@ export default async function AnimePage({ params }: Props) {
       <div className="container">
         {m.trailer?.site === "youtube" ? <Trailer youtubeId={m.trailer.id} title={title} /> : null}
 
-        {m.characters.edges.length > 0 ? (
-          <section className="row">
-            <div className="row__head">
-              <h2>Characters</h2>
-            </div>
-            <div className="chars">
-              {m.characters.edges.map((c) => (
-                <div className="char" key={c.node.name.full}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={c.node.image.medium ?? ""} alt="" loading="lazy" />
-                  <div>
-                    <strong>{c.node.name.full}</strong>
-                    <span>{prettyEnum(c.role)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+        {characters.length > 0 ? <Characters characters={characters} /> : null}
+
+        <Artwork images={artwork} />
 
         {relations.length > 0 ? (
           <Row title="Related">
@@ -133,7 +124,7 @@ export default async function AnimePage({ params }: Props) {
         ) : null}
 
         {recs.length > 0 ? (
-          <Row title="You might also like">
+          <Row title="More like this">
             {recs.map((r) => (
               <AnimeCard key={r.id} anime={r} />
             ))}

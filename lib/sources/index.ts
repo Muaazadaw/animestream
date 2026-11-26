@@ -2,7 +2,7 @@ import { airedEpisodes, getAnime, titleOf, type MediaDetail } from "../anilist";
 import { aniflowProvider } from "./aniflow";
 import { demoProvider } from "./demo";
 import { selfHostedProvider } from "./self-hosted";
-import type { AnimeRef, EpisodeInfo, SourceProvider } from "./types";
+import type { AnimeRef, Audio, EpisodeInfo, SourceProvider } from "./types";
 
 // Register providers here. Order = order on the server picker; the first one
 // with episodes is selected by default.
@@ -25,21 +25,22 @@ export async function animeRef(id: number): Promise<AnimeRef | null> {
   return m ? toAnimeRef(m) : null;
 }
 
-export type ProviderEpisodes = { id: string; name: string; episodes: EpisodeInfo[] };
+export type ProviderEpisodes = { id: string; name: string; audio: Audio[]; tags: string[]; episodes: EpisodeInfo[] };
 
 /** Episode lists from every enabled provider; a failing provider is skipped. */
 export async function episodesFor(anime: AnimeRef): Promise<ProviderEpisodes[]> {
   const results = await Promise.all(
     enabledProviders().map(async (p) => {
+      const base = { id: p.id, name: p.name, audio: p.audio ?? (["sub"] as Audio[]), tags: p.tags ?? [] };
       try {
-        return { id: p.id, name: p.name, episodes: await p.getEpisodes(anime) };
+        return { ...base, episodes: await p.getEpisodes(anime) };
       } catch (e) {
         console.error(`[sources] ${p.id} getEpisodes failed`, e);
-        return { id: p.id, name: p.name, episodes: [] };
+        return { ...base, episodes: [] };
       }
     }),
   );
   return results.filter((r) => r.episodes.length > 0);
 }
 
-export type { AnimeRef, EpisodeInfo, SourceProvider, Stream } from "./types";
+export type { AnimeRef, Audio, EpisodeInfo, SourceProvider, Stream } from "./types";
