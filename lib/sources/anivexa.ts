@@ -100,6 +100,141 @@ function normalizeSubtitle(
   };
 }
 
+type AnivexaStream = NonNullable<AnivexaPlayResponse["streams"]>[number];
+
+/** Anivexa's "H-SUB" server has the subtitles burned into the video. */
+function isHardSub(stream: AnivexaStream): boolean {
+  return /^h-?sub$/i.test(stream.server ?? "");
+}
+
+async function getAnivexaStream(
+  anime: AnimeRef,
+  episode: number,
+  audio: Audio,
+  hardSub: boolean,
+): Promise<Stream | null> {
+  const provider = "reanime";
+
+  const url =
+    `${BASE_URL}/watch/${provider}/` +
+    `${encodeURIComponent(anime.id)}/` +
+    `${audio}/${provider}-${encodeURIComponent(episode)}`;
+
+  const response = await fetch(url, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as AnivexaPlayResponse;
+
+  // Soft-sub and hard-sub servers are offered as separate providers.
+  const streams = (data.streams ?? []).filter(
+    (stream) => stream.url && isHardSub(stream) === hardSub,
+  );
+
+  const matchingStreams = streams.filter(
+    (stream) => stream.audio === audio,
+  );
+
+  const usableStreams = matchingStreams.length
+    ? matchingStreams
+    : streams;
+
+  // stream_url is a soft-sub server, so it's only a fallback for that provider.
+  if (!usableStreams.length && (hardSub || !data.stream_url)) {
+    return null;
+  }
+
+  const sources = usableStreams.length
+    ? usableStreams.map((stream, index) => ({
+        url:
+          stream.type === "mp4"
+            ? (stream.url as string)
+            : proxiedStreamUrl(stream.url as string, stream.playlist_key ?? stream.key, audio),
+        type:
+          stream.type === "mp4"
+            ? ("mp4" as const)
+            : ("hls" as const),
+        quality: stream.server ?? `Server ${index + 1}`,
+      }))
+    : [
+        {
+          url: proxiedStreamUrl(data.stream_url as string, undefined, audio),
+          type: "hls" as const,
+          quality: "auto",
+        },
+      ];
+
+  const subtitleSource = hardSub
+    ? []
+    : (usableStreams[0]?.subtitles ?? data.subtitles ?? []);
+
+  const subtitleTracks = subtitleSource
+    .map((subtitle, index) => normalizeSubtitle(subtitle, index))
+    .filter((subtitle): subtitle is SubtitleTrack => subtitle !== null);
+
+  return {
+    sources,
+    subtitles: subtitleTracks,
+    intro:
+      usableStreams[0]?.intro ??
+      data.intro ??
+      undefined,
+    outro:
+      usableStreams[0]?.outro ??
+      data.outro ??
+      undefined,
+  };
+}
+
+async function getAnivexaEpisodes(anime: AnimeRef): Promise<EpisodeInfo[]> {
+  const count = episodeCount(anime);
+
+  if (count <= 0) {
+    return [];
+  }
+
+  const url = `${BASE_URL}/episodes/${encodeURIComponent(anime.id)}`;
+
+  const response = await fetch(url, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = (await response.json()) as AnivexaEpisodesResponse;
+
+  const subEpisodes = data.episodes?.sub ?? [];
+  const dubEpisodes = data.episodes?.dub ?? [];
+
+  const episodes: EpisodeInfo[] = [];
+
+  for (let number = 1; number <= count; number += 1) {
+    const sub = subEpisodes.find(
+      (episode) => episode.number === number,
+    );
+
+    const dub = dubEpisodes.find(
+      (episode) => episode.number === number,
+    );
+
+    episodes.push({
+      number,
+      title: sub?.title ?? dub?.title ?? `Episode ${number}`,
+      thumbnail: sub?.image ?? dub?.image,
+      filler: sub?.filler ?? dub?.filler,
+      dub: Boolean(dub),
+    });
+  }
+
+  return episodes;
+}
+
 export const anivexaProvider: SourceProvider = {
   id: "anivexa",
   name: "Anivexa",
@@ -112,125 +247,29 @@ export const anivexaProvider: SourceProvider = {
     return Boolean(BASE_URL);
   },
 
-  async getEpisodes(anime: AnimeRef): Promise<EpisodeInfo[]> {
-    const count = episodeCount(anime);
+  getEpisodes: getAnivexaEpisodes,
 
-    if (count <= 0) {
-      return [];
-    }
+  getStream(anime: AnimeRef, episode: number, audio: Audio = "sub") {
+    return getAnivexaStream(anime, episode, audio, false);
+  },
+};
 
-    const url = `${BASE_URL}/episodes/${encodeURIComponent(anime.id)}`;
+/** Anivexa's hard-sub server: Japanese audio with subtitles burned in. Not every show has it. */
+export const anivexaHardSubProvider: SourceProvider = {
+  id: "anivexa-hsub",
+  name: "Anivexa H-Sub",
 
-    const response = await fetch(url, {
-      cache: "no-store",
-    });
+  audio: ["sub"],
 
-    if (!response.ok) {
-      return [];
-    }
+  tags: ["h-sub"],
 
-    const data = (await response.json()) as AnivexaEpisodesResponse;
-
-    const subEpisodes = data.episodes?.sub ?? [];
-    const dubEpisodes = data.episodes?.dub ?? [];
-
-    const episodes: EpisodeInfo[] = [];
-
-    for (let number = 1; number <= count; number += 1) {
-      const sub = subEpisodes.find(
-        (episode) => episode.number === number,
-      );
-
-      const dub = dubEpisodes.find(
-        (episode) => episode.number === number,
-      );
-
-      episodes.push({
-        number,
-        title: sub?.title ?? dub?.title ?? `Episode ${number}`,
-        thumbnail: sub?.image ?? dub?.image,
-        filler: sub?.filler ?? dub?.filler,
-        dub: Boolean(dub),
-      });
-    }
-
-    return episodes;
+  isEnabled() {
+    return Boolean(BASE_URL);
   },
 
-  async getStream(
-    anime: AnimeRef,
-    episode: number,
-    audio: Audio = "sub",
-  ): Promise<Stream | null> {
-    const provider = "reanime";
+  getEpisodes: getAnivexaEpisodes,
 
-    const url =
-      `${BASE_URL}/watch/${provider}/` +
-      `${encodeURIComponent(anime.id)}/` +
-      `${audio}/${provider}-${encodeURIComponent(episode)}`;
-
-    const response = await fetch(url, {
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as AnivexaPlayResponse;
-
-    const streams = data.streams ?? [];
-
-    const matchingStreams = streams.filter(
-      (stream) => stream.audio === audio && stream.url,
-    );
-
-    const usableStreams = matchingStreams.length
-      ? matchingStreams
-      : streams.filter((stream) => stream.url);
-
-    if (!usableStreams.length && !data.stream_url) {
-      return null;
-    }
-
-    const sources = usableStreams.length
-      ? usableStreams.map((stream, index) => ({
-          url:
-            stream.type === "mp4"
-              ? (stream.url as string)
-              : proxiedStreamUrl(stream.url as string, stream.playlist_key ?? stream.key, audio),
-          type:
-            stream.type === "mp4"
-              ? ("mp4" as const)
-              : ("hls" as const),
-          quality: stream.server ?? `Server ${index + 1}`,
-        }))
-      : [
-          {
-            url: proxiedStreamUrl(data.stream_url as string, undefined, audio),
-            type: "hls" as const,
-            quality: "auto",
-          },
-        ];
-
-    const subtitleSource =
-      usableStreams[0]?.subtitles ?? data.subtitles ?? [];
-
-    const subtitleTracks = subtitleSource
-      .map((subtitle, index) => normalizeSubtitle(subtitle, index))
-      .filter((subtitle): subtitle is SubtitleTrack => subtitle !== null);
-
-    return {
-      sources,
-      subtitles: subtitleTracks,
-      intro:
-        usableStreams[0]?.intro ??
-        data.intro ??
-        undefined,
-      outro:
-        usableStreams[0]?.outro ??
-        data.outro ??
-        undefined,
-    };
+  getStream(anime: AnimeRef, episode: number) {
+    return getAnivexaStream(anime, episode, "sub", true);
   },
 };

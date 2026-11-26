@@ -1,13 +1,13 @@
 import { airedEpisodes, getAnime, titleOf, type MediaDetail } from "../anilist";
 import { aniflowProvider } from "./aniflow";
-import { anivexaProvider } from "./anivexa";
+import { anivexaHardSubProvider, anivexaProvider } from "./anivexa";
 import { demoProvider } from "./demo";
 import { selfHostedProvider } from "./self-hosted";
 import type { AnimeRef, Audio, EpisodeInfo, SourceProvider } from "./types";
 
 // Register providers here. Order = order on the server picker; the first one
 // with episodes is selected by default.
-const PROVIDERS: SourceProvider[] = [aniflowProvider, anivexaProvider, selfHostedProvider, demoProvider];
+const PROVIDERS: SourceProvider[] = [aniflowProvider, anivexaProvider, anivexaHardSubProvider, selfHostedProvider, demoProvider];
 
 export function enabledProviders() {
   return PROVIDERS.filter((p) => p.isEnabled());
