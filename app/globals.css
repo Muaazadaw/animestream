@@ -143,7 +143,8 @@ h1, h2, h3 { margin: 0; line-height: 1.2; }
 }
 .row__track::-webkit-scrollbar { display: none; }
 .row__track > * { scroll-snap-align: start; }
-.row__track > .card--wide { width: clamp(220px, 24vw, 300px); }
+/* Rows of wide (16:9) cards, e.g. Continue Watching, need wider slots than posters. */
+.row__track:has(> .card--wide) { grid-auto-columns: clamp(220px, 24vw, 300px); }
 
 .card { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .card__img {
@@ -474,13 +475,16 @@ video::cue {
 }
 
 /* Icon buttons, dropdown menus, tags */
-.icon-btn {
-  display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; cursor: pointer;
-  background: var(--bg-2); border: 1px solid var(--line); color: var(--text);
+.watch__actions .icon-btn {
+  display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 10px;
+  color: var(--text); font-size: inherit;
 }
-.icon-btn:hover:not(:disabled) { border-color: var(--accent-2); }
+.watch__actions .icon-btn:hover:not(:disabled) { border-color: var(--accent-2); }
 .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.icon-btn--ghost { width: 32px; height: 32px; background: none; border-color: transparent; color: var(--muted); }
+.icon-btn--ghost {
+  display: inline-grid; place-items: center; border-radius: 8px; font-size: 14px;
+  background: none; border-color: transparent; color: var(--muted);
+}
 .icon-btn--ghost:hover:not(:disabled), .icon-btn--ghost.is-on { color: var(--text); background: var(--bg-3); }
 .menu { position: relative; }
 .menu__btn {
