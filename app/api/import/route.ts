@@ -1,22 +1,19 @@
 import { NextResponse } from "next/server";
-import { titleOf, type MediaTitle } from "@/lib/anilist";
-import type { HistoryEntry, LibraryState, ListEntry, ListStatus } from "@/lib/state";
+import {
+  ANILIST_USER_LISTS_QUERY,
+  entriesFromAniList,
+  IMPORT_MEDIA_FIELDS as MEDIA,
+  toLibraryState,
+  type AniListUserListsData,
+  type ImportedEntry as Imported,
+  type ImportMedia as Media,
+} from "@/lib/list-import";
+import type { ListStatus } from "@/lib/state";
 
 // POST /api/import { service: "anilist" | "mal", username }
 // Reads a public AniList or MyAnimeList list and returns it as a partial
-// LibraryState (lists + "continue watching" for shows in progress). The
-// browser merges it in, and syncs it to the account if signed in.
-
-type Media = {
-  id: number;
-  idMal?: number | null;
-  title: MediaTitle;
-  coverImage: { large: string | null };
-  format: string | null;
-  episodes: number | null;
-};
-
-const MEDIA = "id idMal title { romaji english native userPreferred } coverImage { large } format episodes";
+// LibraryState (lists, favourites, and "continue watching" for shows in
+// progress). The browser merges it in, and syncs it to the account if signed in.
 
 async function anilist<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const res = await fetch("https://graphql.anilist.co", {
@@ -30,24 +27,9 @@ async function anilist<T>(query: string, variables: Record<string, unknown>): Pr
   return json.data as T;
 }
 
-type Imported = { media: Media; status: ListStatus; progress: number; score: number; updatedAt: number };
-
-async function fromAniList(user: string): Promise<Imported[]> {
-  const data = await anilist<{
-    MediaListCollection: {
-      lists: { entries: { status: ListStatus; progress: number; score: number; updatedAt: number; media: Media }[] }[];
-    };
-  }>(
-    `query ($user: String) {
-      MediaListCollection(userName: $user, type: ANIME) {
-        lists { entries { status progress score(format: POINT_100) updatedAt media { ${MEDIA} } } }
-      }
-    }`,
-    { user },
-  );
-  return data.MediaListCollection.lists.flatMap((l) =>
-    l.entries.map((e) => ({ ...e, updatedAt: (e.updatedAt || 0) * 1000 })),
-  );
+async function fromAniList(user: string) {
+  const data = await anilist<AniListUserListsData>(ANILIST_USER_LISTS_QUERY, { user });
+  return { entries: entriesFromAniList(data), user: data.User };
 }
 
 const MAL_STATUS: Record<string, ListStatus> = {
@@ -112,8 +94,9 @@ export async function POST(req: Request) {
   if (!user || !/^[\w-]{2,32}$/.test(user)) return NextResponse.json({ error: "Enter a valid username." }, { status: 400 });
 
   let entries: Imported[];
+  let anilistUser: AniListUserListsData["User"] = null;
   try {
-    if (body.service === "anilist") entries = await fromAniList(user);
+    if (body.service === "anilist") ({ entries, user: anilistUser } = await fromAniList(user));
     else if (body.service === "mal") entries = await fromMal(user);
     else return NextResponse.json({ error: "Unknown service" }, { status: 400 });
   } catch (e) {
@@ -123,25 +106,7 @@ export async function POST(req: Request) {
   }
 
   const from = body.service === "mal" ? "mal" : "anilist";
-  const lists: Record<string, ListEntry> = {};
-  const history: HistoryEntry[] = [];
-  for (const e of entries) {
-    const anime = {
-      id: e.media.id,
-      title: titleOf(e.media.title),
-      cover: e.media.coverImage.large,
-      format: e.media.format,
-      episodes: e.media.episodes,
-    };
-    lists[anime.id] = { ...anime, status: e.status, progress: e.progress, score: e.score, updatedAt: e.updatedAt, from };
-
-    // Shows in progress go to "continue watching", on the next unwatched episode.
-    if (e.status === "CURRENT" || e.status === "REPEATING") {
-      const next = anime.episodes ? Math.min(e.progress + 1, anime.episodes) : e.progress + 1;
-      history.push({ ...anime, episode: next, time: 0, duration: 0, updatedAt: e.updatedAt });
-    }
-  }
-
-  const counts = Object.values(lists).reduce<Record<string, number>>((c, l) => ((c[l.status] = (c[l.status] ?? 0) + 1), c), {});
-  return NextResponse.json({ state: { lists, history } satisfies Partial<LibraryState>, counts, total: entries.length });
+  const favorites = from === "anilist" ? (anilistUser?.favourites.anime.nodes ?? []) : [];
+  const result = toLibraryState(entries, from, favorites);
+  return NextResponse.json({ ...result, avatar: from === "anilist" ? (anilistUser?.avatar.large ?? null) : null });
 }

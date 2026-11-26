@@ -1,140 +1,382 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Avatar, useProfile } from "@/components/AccountMenu";
 import { HistoryCard, useHistory } from "@/components/ContinueWatching";
+import { Icon } from "@/components/Menu";
+import type { AnimeInfo } from "@/app/api/anime-info/route";
+import { prettyEnum } from "@/lib/anilist";
+import { fetchAnimeInfo } from "@/lib/notifications";
 import { LIST_STATUSES, type ListStatus } from "@/lib/state";
 import {
+  createCustomList,
+  deleteCustomList,
+  getCustomLists,
+  getFavorites,
   getLists,
   getWatchlist,
+  inWatchlist,
   setListStatus,
   STORAGE_EVENT,
+  toggleFavorite,
+  toggleInCustomList,
   toggleWatchlist,
+  type CustomList,
   type ListEntry,
   type SavedAnime,
 } from "@/lib/storage";
 import { useAccount } from "@/lib/sync";
 
-export default function LibraryPage() {
-  const history = useHistory();
-  const { user } = useAccount();
-  const [list, setList] = useState<SavedAnime[]>([]);
-  const [lists, setLists] = useState<ListEntry[]>([]);
-  const [tab, setTab] = useState<ListStatus>("CURRENT");
+type Entry = ListEntry & { favorite: boolean };
+type View = "ALL" | "FAVORITES" | "HISTORY" | ListStatus | `custom:${string}`;
 
+const STATUS_ICON: Record<ListStatus, string> = {
+  CURRENT: "play",
+  PLANNING: "bookmark",
+  COMPLETED: "check",
+  REPEATING: "rewatch",
+  PAUSED: "pause",
+  DROPPED: "dropped",
+};
+const STATUS_LABEL: Record<ListStatus, string> = {
+  CURRENT: "Watching",
+  PLANNING: "Planning",
+  COMPLETED: "Completed",
+  REPEATING: "Re-Watching",
+  PAUSED: "Paused",
+  DROPPED: "Dropped",
+};
+const SIDEBAR_ORDER: ListStatus[] = ["CURRENT", "PLANNING", "COMPLETED", "REPEATING", "PAUSED", "DROPPED"];
+const TYPES = ["TV", "MOVIE", "OVA", "ONA", "SPECIAL", "TV_SHORT"];
+const AIRING = [
+  { id: "RELEASING", label: "Airing" },
+  { id: "FINISHED", label: "Finished" },
+  { id: "NOT_YET_RELEASED", label: "Not yet aired" },
+];
+
+/** Everything in the viewer's lists, plus old watchlist items as Planning. */
+function useLibrary() {
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [custom, setCustom] = useState<CustomList[]>([]);
   useEffect(() => {
     const sync = () => {
-      setList(getWatchlist());
-      setLists(Object.values(getLists()).sort((a, b) => b.updatedAt - a.updatedAt));
+      const lists = getLists();
+      const favs = getFavorites();
+      const all: Entry[] = Object.values(lists).map((l) => ({ ...l, favorite: !!favs[l.id]?.on }));
+      for (const w of getWatchlist()) {
+        if (!lists[w.id]) {
+          all.push({ ...w, status: "PLANNING", progress: 0, score: 0, updatedAt: w.addedAt ?? 0, favorite: !!favs[w.id]?.on });
+        }
+      }
+      // Favourites that aren't in any list still show under Favourites.
+      for (const f of Object.values(favs)) {
+        if (f.on && !all.some((e) => e.id === f.id)) all.push({ ...f, status: "PLANNING", progress: 0, score: 0, favorite: true });
+      }
+      setEntries(all.sort((a, b) => b.updatedAt - a.updatedAt));
+      setCustom(getCustomLists());
     };
     sync();
     window.addEventListener(STORAGE_EVENT, sync);
     return () => window.removeEventListener(STORAGE_EVENT, sync);
   }, []);
+  return { entries, custom };
+}
 
-  const inTab = lists.filter((l) => l.status === tab);
+function airingDot(status: string | null | undefined) {
+  return status === "RELEASING" ? "dot--airing" : status === "NOT_YET_RELEASED" ? "dot--upcoming" : "dot--finished";
+}
+
+function CardMenu({ entry, custom }: { entry: Entry; custom: CustomList[] }) {
+  const [open, setOpen] = useState(false);
+  const anime: SavedAnime = { id: entry.id, title: entry.title, cover: entry.cover, format: entry.format, episodes: entry.episodes };
+  return (
+    <div className="lcard__menu" onMouseLeave={() => setOpen(false)}>
+      <button className="lcard__badge" onClick={(e) => (e.preventDefault(), setOpen(!open))} aria-label="Change list">
+        <Icon name={STATUS_ICON[entry.status]} size={14} />
+      </button>
+      {open ? (
+        <div className="lcard__pop" onClick={(e) => e.preventDefault()}>
+          {SIDEBAR_ORDER.map((s) => (
+            <button key={s} className={entry.status === s ? "is-active" : ""} onClick={() => setListStatus(anime, s)}>
+              <Icon name={STATUS_ICON[s]} size={14} /> {STATUS_LABEL[s]}
+            </button>
+          ))}
+          <hr />
+          <button className={entry.favorite ? "is-active" : ""} onClick={() => toggleFavorite(anime)}>
+            <Icon name="heart" size={14} /> {entry.favorite ? "Unfavourite" : "Favourite"}
+          </button>
+          {custom.map((c) => (
+            <button key={c.id} className={c.items.some((a) => a.id === entry.id) ? "is-active" : ""} onClick={() => toggleInCustomList(c.id, anime)}>
+              <Icon name="plus" size={14} /> {c.name}
+            </button>
+          ))}
+          <hr />
+          <button
+            className="danger"
+            onClick={() => {
+              setListStatus(anime, null);
+              if (inWatchlist(anime.id)) toggleWatchlist(anime);
+              if (entry.favorite) toggleFavorite(anime);
+            }}
+          >
+            <Icon name="trash" size={14} /> Remove
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function LibraryPage() {
+  const { user, createdAt } = useAccount();
+  const profile = useProfile();
+  const history = useHistory();
+  const { entries, custom } = useLibrary();
+  const [view, setView] = useState<View>("ALL");
+  const [type, setType] = useState("");
+  const [airing, setAiring] = useState("");
+  const [q, setQ] = useState("");
+  const [info, setInfo] = useState<Record<number, AnimeInfo>>({});
+  const [newList, setNewList] = useState("");
+
+  // Year, score and airing status for the cards.
+  const idsKey = entries.map((e) => e.id).sort((a, b) => a - b).join(",");
+  useEffect(() => {
+    if (!idsKey) return;
+    let cancelled = false;
+    fetchAnimeInfo(idsKey.split(",").map(Number).slice(0, 300))
+      .then((d) => !cancelled && setInfo(d.media))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [idsKey]);
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { ALL: entries.length, FAVORITES: entries.filter((e) => e.favorite).length };
+    for (const e of entries) c[e.status] = (c[e.status] ?? 0) + 1;
+    return c;
+  }, [entries]);
+
+  const customView = view.startsWith("custom:") ? custom.find((c) => `custom:${c.id}` === view) : null;
+  const shown = useMemo(() => {
+    let list: Entry[];
+    if (customView) {
+      list = customView.items.map(
+        (a) => entries.find((e) => e.id === a.id) ?? { ...a, status: "PLANNING" as const, progress: 0, score: 0, updatedAt: 0, favorite: false },
+      );
+    } else if (view === "FAVORITES") list = entries.filter((e) => e.favorite);
+    else if (view === "ALL" || view === "HISTORY") list = entries;
+    else list = entries.filter((e) => e.status === view);
+    const term = q.trim().toLowerCase();
+    return list.filter((e) => {
+      const m = info[e.id];
+      if (type && (m?.format ?? e.format) !== type) return false;
+      if (airing && m?.status !== airing) return false;
+      if (term && !e.title.toLowerCase().includes(term)) return false;
+      return true;
+    });
+  }, [entries, view, customView, q, type, airing, info]);
+
+  const name = user ?? profile.anilist?.name ?? profile.anilistUser ?? "Guest";
+  const viewLabel =
+    view === "ALL" ? "Watchlist" : view === "FAVORITES" ? "Favorites" : view === "HISTORY" ? "Continue watching" : customView ? customView.name : STATUS_LABEL[view as ListStatus];
 
   return (
-    <div className="container page">
-      <h1 className="page__title">My List</h1>
-      {user === null ? (
-        <p className="notice">
-          Saved in this browser only. <Link href="/account">Sign in</Link> to sync across devices, or import from AniList /
-          MyAnimeList.
-        </p>
-      ) : null}
-
-      <h2 className="section-title">Continue watching</h2>
-      {history.length === 0 ? (
-        <p className="empty">Nothing watched yet.</p>
-      ) : (
-        <div className="grid grid--wide">
-          {history.map((h) => (
-            <HistoryCard key={h.id} h={h} />
-          ))}
+    <div className="container page profile">
+      <section className="profile__head">
+        <Avatar src={profile.avatar} name={name} size={96} />
+        <div className="profile__who">
+          <h1>{name}</h1>
+          <span className="muted">
+            {createdAt
+              ? `Joined ${new Date(createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+              : user === null
+                ? (
+                  <>
+                    Saved in this browser only · <Link href="/settings#account">Sign in to sync</Link>
+                  </>
+                )
+                : null}
+          </span>
         </div>
-      )}
+        <div className="profile__stats">
+          <div>
+            <strong>{counts.ALL ?? 0}</strong>
+            <span>Total anime</span>
+          </div>
+          <div>
+            <strong>{counts.COMPLETED ?? 0}</strong>
+            <span>Completed</span>
+          </div>
+          <div>
+            <strong>{entries.reduce((n, e) => n + (e.progress || 0), 0).toLocaleString()}</strong>
+            <span>Episodes</span>
+          </div>
+        </div>
+      </section>
 
-      <div className="section-head">
-        <h2 className="section-title">Lists</h2>
-        <Link href="/account" className="muted">
-          Import from AniList / MAL
-        </Link>
-      </div>
-      <div className="tabs">
-        {LIST_STATUSES.map((s) => {
-          const n = lists.filter((l) => l.status === s.id).length;
-          return (
-            <button key={s.id} className={tab === s.id ? "is-active" : ""} onClick={() => setTab(s.id)}>
-              {s.label} <span className="muted">{n}</span>
+      <div className="profile__body">
+        <aside className="lside">
+          <div className="lside__filters">
+            <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">All types</option>
+              {TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {prettyEnum(t)}
+                </option>
+              ))}
+            </select>
+            <select className="select" value={airing} onChange={(e) => setAiring(e.target.value)}>
+              <option value="">All airing statuses</option>
+              {AIRING.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <input className="lside__search" placeholder="Filter by title" value={q} onChange={(e) => setQ(e.target.value)} />
+
+          <nav className="lside__group">
+            <button className={view === "ALL" ? "is-active" : ""} onClick={() => setView("ALL")}>
+              <span>All statuses</span>
+              <em>{counts.ALL ?? 0}</em>
             </button>
-          );
-        })}
-      </div>
-      {inTab.length === 0 ? (
-        <p className="empty">Nothing here yet.</p>
-      ) : (
-        <div className="grid">
-          {inTab.map((a) => (
-            <div className="card" key={a.id}>
-              <Link href={`/anime/${a.id}`} className="card__img">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.cover ?? ""} alt="" loading="lazy" />
-                <span className="card__badge">
-                  {a.progress}/{a.episodes ?? "?"}
-                </span>
-                {a.episodes ? (
-                  <span className="progress">
-                    <span style={{ width: `${Math.min(100, (a.progress / a.episodes) * 100)}%` }} />
-                  </span>
-                ) : null}
-              </Link>
-              <div className="card__title">{a.title}</div>
-              <div className="card__meta">
-                <Link href={`/watch/${a.id}?ep=${a.episodes ? Math.min(a.progress + 1, a.episodes) : a.progress + 1}`}>Watch</Link>
-                <select
-                  className="card__status"
-                  value={a.status}
-                  onChange={(e) => setListStatus(a, (e.target.value || null) as ListStatus | null)}
-                  aria-label="Move to list"
-                >
-                  {LIST_STATUSES.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                  <option value="">Remove</option>
-                </select>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            <button className={view === "FAVORITES" ? "is-active" : ""} onClick={() => setView("FAVORITES")}>
+              <Icon name="heart" size={15} />
+              <span>Favorites</span>
+              <em>{counts.FAVORITES ?? 0}</em>
+            </button>
+            {SIDEBAR_ORDER.map((s) => (
+              <button key={s} className={view === s ? "is-active" : ""} onClick={() => setView(s)}>
+                <Icon name={STATUS_ICON[s]} size={15} />
+                <span>{STATUS_LABEL[s]}</span>
+                <em>{counts[s] ?? 0}</em>
+              </button>
+            ))}
+            <button className={view === "HISTORY" ? "is-active" : ""} onClick={() => setView("HISTORY")}>
+              <Icon name="rewatch" size={15} />
+              <span>Continue watching</span>
+              <em>{history.length}</em>
+            </button>
+          </nav>
 
-      <h2 className="section-title">Watchlist</h2>
-      {list.length === 0 ? (
-        <p className="empty">
-          Your watchlist is empty. <Link href="/search">Find something to watch</Link>.
-        </p>
-      ) : (
-        <div className="grid">
-          {list.map((a) => (
-            <div className="card" key={a.id}>
-              <Link href={`/anime/${a.id}`} className="card__img">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.cover ?? ""} alt="" loading="lazy" />
-              </Link>
-              <div className="card__title">{a.title}</div>
-              <div className="card__meta">
-                <Link href={`/watch/${a.id}`}>Watch</Link>
-                <button className="link-btn" onClick={() => toggleWatchlist(a)}>
-                  Remove
+          <div className="lside__label">Custom lists</div>
+          <nav className="lside__group">
+            {custom.length === 0 ? <p className="lside__empty">No custom lists yet.</p> : null}
+            {custom.map((c) => (
+              <div key={c.id} className={`lside__custom ${view === `custom:${c.id}` ? "is-active" : ""}`}>
+                <button onClick={() => setView(`custom:${c.id}`)}>
+                  <span>{c.name}</span>
+                  <em>{c.items.length}</em>
+                </button>
+                <button
+                  className="lside__del"
+                  aria-label={`Delete ${c.name}`}
+                  onClick={() => {
+                    if (confirm(`Delete the list "${c.name}"?`)) {
+                      deleteCustomList(c.id);
+                      if (view === `custom:${c.id}`) setView("ALL");
+                    }
+                  }}
+                >
+                  <Icon name="trash" size={13} />
                 </button>
               </div>
+            ))}
+            <form
+              className="lside__new"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newList.trim()) return;
+                const l = createCustomList(newList);
+                setNewList("");
+                setView(`custom:${l.id}`);
+              }}
+            >
+              <input placeholder="Create custom list" value={newList} onChange={(e) => setNewList(e.target.value)} maxLength={40} />
+              <button aria-label="Create list">
+                <Icon name="plus" size={15} />
+              </button>
+            </form>
+          </nav>
+          <Link href="/settings#import" className="lside__import">
+            Import from AniList / MAL
+          </Link>
+        </aside>
+
+        <section className="lmain">
+          <h2 className="lmain__title">
+            {viewLabel} <span>{view === "HISTORY" ? history.length : shown.length}</span>
+          </h2>
+
+          {view === "HISTORY" ? (
+            history.length === 0 ? (
+              <p className="empty">Nothing watched yet.</p>
+            ) : (
+              <div className="grid grid--wide">
+                {history.map((h) => (
+                  <HistoryCard key={h.id} h={h} />
+                ))}
+              </div>
+            )
+          ) : shown.length === 0 ? (
+            <p className="empty">
+              {entries.length === 0 ? (
+                <>
+                  Your list is empty. <Link href="/search">Find something to watch</Link> or{" "}
+                  <Link href="/settings#import">import from AniList / MAL</Link>.
+                </>
+              ) : (
+                "Nothing matches."
+              )}
+            </p>
+          ) : (
+            <div className="lgrid">
+              {shown.map((e) => {
+                const m = info[e.id];
+                const eps = m?.episodes ?? e.episodes;
+                return (
+                  <Link key={e.id} href={`/anime/${e.id}`} className="lcard">
+                    <span className="lcard__img">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={m?.coverImage.large ?? e.cover ?? ""} alt="" loading="lazy" />
+                      <CardMenu entry={e} custom={custom} />
+                      {e.favorite ? (
+                        <span className="lcard__fav">
+                          <Icon name="heart" size={12} />
+                        </span>
+                      ) : null}
+                      {e.progress && eps ? (
+                        <span className="progress">
+                          <span style={{ width: `${Math.min(100, (e.progress / eps) * 100)}%` }} />
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="lcard__title">
+                      <i className={`dot ${airingDot(m?.status)}`} />
+                      {e.title}
+                    </span>
+                    <span className="chips">
+                      {m?.format ?? e.format ? <span>{prettyEnum(m?.format ?? e.format)}</span> : null}
+                      {m?.seasonYear ? <span>{m.seasonYear}</span> : null}
+                      {eps ? (
+                        <span>
+                          <Icon name="cc" size={11} /> {e.progress ? `${e.progress}/` : ""}
+                          {eps}
+                        </span>
+                      ) : null}
+                      {m?.averageScore ? <span>★ {m.averageScore}</span> : null}
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
-          ))}
-        </div>
-      )}
+          )}
+        </section>
+      </div>
     </div>
   );
 }

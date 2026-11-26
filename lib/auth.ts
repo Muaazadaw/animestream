@@ -39,6 +39,10 @@ export async function createUser(name: string, password: string): Promise<string
   return null;
 }
 
+export async function userCreatedAt(name: string): Promise<number | null> {
+  return (await dbGet<UserRecord>(`user:${name}`))?.createdAt ?? null;
+}
+
 export async function checkPassword(name: string, password: string): Promise<boolean> {
   const user = await dbGet<UserRecord>(`user:${name}`);
   // Hash anyway when the user doesn't exist, so timing doesn't reveal it.

@@ -6,27 +6,36 @@
 import {
   emptyState,
   mergeState,
+  type CustomList,
+  type Favorite,
   type HistoryEntry,
   type LibraryState,
   type ListEntry,
   type ListStatus,
   type Position,
+  type Profile,
   type SavedAnime,
   type WatchlistEntry,
 } from "./state";
 
-export type { HistoryEntry, ListEntry, ListStatus, SavedAnime } from "./state";
+export type { CustomList, Favorite, HistoryEntry, ListEntry, ListStatus, Profile, SavedAnime } from "./state";
 
 const LIST_KEY = "as:watchlist";
 const HISTORY_KEY = "as:history";
 const PREFS_KEY = "as:prefs";
 const LISTS_KEY = "as:lists";
+const FAVORITES_KEY = "as:favorites";
+const CUSTOM_KEY = "as:custom-lists";
+const PROFILE_KEY = "as:profile";
+const SEEN_KEY = "as:seen";
 const REMOVED_KEY = "as:removed";
 const POS_PREFIX = "as:pos:";
 /** Fired on every change, for the UI. */
 export const STORAGE_EVENT = "as:storage";
 /** Fired only for changes made on this device, for sync. */
 export const LOCAL_CHANGE_EVENT = "as:local-change";
+/** Fired (detail: ListEntry | { id, removed: true }) when the viewer changes a list entry here. */
+export const LIST_CHANGE_EVENT = "as:list-change";
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -118,7 +127,9 @@ export function getLists(): Record<string, ListEntry> {
 }
 
 export function setListEntry(entry: Omit<ListEntry, "updatedAt">) {
-  write(LISTS_KEY, { ...getLists(), [entry.id]: { ...entry, updatedAt: Date.now() } });
+  const full = { ...entry, updatedAt: Date.now() };
+  write(LISTS_KEY, { ...getLists(), [entry.id]: full });
+  window.dispatchEvent(new CustomEvent(LIST_CHANGE_EVENT, { detail: full }));
 }
 
 export function setListStatus(anime: SavedAnime, status: ListStatus | null) {
@@ -126,10 +137,78 @@ export function setListStatus(anime: SavedAnime, status: ListStatus | null) {
   if (!status) {
     delete lists[anime.id];
     write(LISTS_KEY, lists);
+    window.dispatchEvent(new CustomEvent(LIST_CHANGE_EVENT, { detail: { id: anime.id, removed: true } }));
     return;
   }
   const cur = lists[anime.id];
   setListEntry({ ...anime, status, progress: cur?.progress ?? 0, score: cur?.score ?? 0, from: cur?.from ?? "site" });
+}
+
+export function getFavorites(): Record<string, Favorite> {
+  return read<Record<string, Favorite>>(FAVORITES_KEY, {});
+}
+
+export function isFavorite(id: number) {
+  return !!getFavorites()[id]?.on;
+}
+
+export function toggleFavorite(anime: SavedAnime): boolean {
+  const on = !isFavorite(anime.id);
+  write(FAVORITES_KEY, { ...getFavorites(), [anime.id]: { ...anime, on, updatedAt: Date.now() } });
+  return on;
+}
+
+export function getCustomLists(): CustomList[] {
+  return Object.values(read<Record<string, CustomList>>(CUSTOM_KEY, {}))
+    .filter((l) => !l.deleted)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function saveCustomList(list: CustomList) {
+  write(CUSTOM_KEY, { ...read<Record<string, CustomList>>(CUSTOM_KEY, {}), [list.id]: { ...list, updatedAt: Date.now() } });
+}
+
+export function createCustomList(name: string): CustomList {
+  const list: CustomList = { id: Math.random().toString(36).slice(2, 10), name: name.trim(), items: [], updatedAt: Date.now() };
+  saveCustomList(list);
+  return list;
+}
+
+export function deleteCustomList(id: string) {
+  const list = read<Record<string, CustomList>>(CUSTOM_KEY, {})[id];
+  if (list) saveCustomList({ ...list, items: [], deleted: true });
+}
+
+export function toggleInCustomList(id: string, anime: SavedAnime) {
+  const list = read<Record<string, CustomList>>(CUSTOM_KEY, {})[id];
+  if (!list) return;
+  const has = list.items.some((a) => a.id === anime.id);
+  saveCustomList({ ...list, items: has ? list.items.filter((a) => a.id !== anime.id) : [anime, ...list.items] });
+}
+
+export function getProfile(): Profile {
+  return read<Profile>(PROFILE_KEY, { updatedAt: 0 });
+}
+
+export function setProfile(p: Partial<Profile>) {
+  write(PROFILE_KEY, { ...getProfile(), ...p, updatedAt: Date.now() });
+}
+
+export function getSeen(): Record<string, number> {
+  return read<Record<string, number>>(SEEN_KEY, {});
+}
+
+export function markSeen(ids: string[]) {
+  const seen = getSeen();
+  const now = Date.now();
+  let changed = false;
+  for (const id of ids) {
+    if (!seen[id]) {
+      seen[id] = now;
+      changed = true;
+    }
+  }
+  if (changed) write(SEEN_KEY, seen);
 }
 
 /** Everything above, as one document for syncing. */
@@ -151,6 +230,10 @@ export function exportState(): LibraryState {
     watchlist: getWatchlist(),
     positions,
     lists: getLists(),
+    favorites: getFavorites(),
+    customLists: read<Record<string, CustomList>>(CUSTOM_KEY, {}),
+    profile: getProfile(),
+    seen: getSeen(),
     removed: getRemoved(),
   };
 }
@@ -166,6 +249,10 @@ export function importState(incoming: Partial<LibraryState>, local = false) {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(s.history));
     localStorage.setItem(LIST_KEY, JSON.stringify(s.watchlist));
     localStorage.setItem(LISTS_KEY, JSON.stringify(s.lists));
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(s.favorites));
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify(s.customLists));
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(s.profile));
+    localStorage.setItem(SEEN_KEY, JSON.stringify(s.seen));
     localStorage.setItem(REMOVED_KEY, JSON.stringify(s.removed));
     for (const [k, p] of Object.entries(s.positions)) {
       if (before.positions[k]?.u !== p.u || !before.positions[k]) localStorage.setItem(POS_PREFIX + k, JSON.stringify(p));

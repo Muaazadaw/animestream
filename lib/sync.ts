@@ -6,13 +6,14 @@
 // (and right away when the tab is hidden or closed).
 
 import { useEffect, useState } from "react";
-import { exportState, importState, LOCAL_CHANGE_EVENT } from "./storage";
+import { exportState, getProfile, importState, LOCAL_CHANGE_EVENT, setProfile } from "./storage";
 import type { LibraryState } from "./state";
 
 export const AUTH_EVENT = "as:auth";
 export type SyncStatus = "idle" | "syncing" | "synced" | "error" | "offline";
 
 let user: string | null | undefined; // undefined = not checked yet
+let createdAt: number | null = null;
 let status: SyncStatus = "idle";
 let lastSynced = 0;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -31,7 +32,9 @@ function setStatus(s: SyncStatus) {
 export async function refreshUser(): Promise<string | null> {
   try {
     const r = await fetch("/api/auth", { cache: "no-store" });
-    user = ((await r.json()) as { user: string | null }).user;
+    const data = (await r.json()) as { user: string | null; createdAt?: number | null };
+    user = data.user;
+    createdAt = data.createdAt ?? null;
   } catch {
     user = null;
   }
@@ -106,6 +109,7 @@ export async function login(action: "login" | "signup", username: string, passwo
   const data = (await r.json().catch(() => ({}))) as { user?: string; error?: string };
   if (!r.ok) return data.error ?? "Something went wrong.";
   user = data.user ?? null;
+  void refreshUser(); // picks up the account's join date
   emit();
   // First sign-in on this device: upload what's here and pull what's there.
   await syncNow();
@@ -120,9 +124,9 @@ export async function logout() {
 }
 
 export function useAccount() {
-  const [state, setState] = useState({ user, status, lastSynced });
+  const [state, setState] = useState({ user, createdAt, status, lastSynced });
   useEffect(() => {
-    const update = () => setState({ user, status, lastSynced });
+    const update = () => setState({ user, createdAt, status, lastSynced });
     update();
     window.addEventListener(AUTH_EVENT, update);
     return () => window.removeEventListener(AUTH_EVENT, update);
@@ -142,9 +146,12 @@ export async function importList(service: "anilist" | "mal", username: string) {
     state?: Partial<LibraryState>;
     counts?: Record<string, number>;
     total?: number;
+    avatar?: string | null;
   };
   if (!r.ok || !data.state) throw new Error(data.error ?? "Import failed.");
   importState(data.state, true);
+  // Use the AniList avatar until the viewer picks their own.
+  if (data.avatar && !getProfile().avatar) setProfile({ avatar: data.avatar });
   if (user) await syncNow();
   return { counts: data.counts ?? {}, total: data.total ?? 0 };
 }

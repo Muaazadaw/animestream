@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
-import { checkPassword, createUser, currentUser, endSession, normalizeName, startSession, validName } from "@/lib/auth";
+import {
+  checkPassword,
+  createUser,
+  currentUser,
+  endSession,
+  normalizeName,
+  startSession,
+  userCreatedAt,
+  validName,
+} from "@/lib/auth";
 
-// GET  /api/auth                                  → { user }
+// GET  /api/auth                                  → { user, createdAt }
 // POST /api/auth { action: "signup" | "login", username, password }
 // POST /api/auth { action: "logout" }
 export async function GET() {
-  return NextResponse.json({ user: await currentUser() });
+  const user = await currentUser();
+  return NextResponse.json({ user, createdAt: user ? await userCreatedAt(user).catch(() => null) : null });
 }
 
 export async function POST(req: Request) {

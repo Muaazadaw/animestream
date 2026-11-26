@@ -44,17 +44,63 @@ export type ListEntry = SavedAnime & {
 /** Playback position of one episode; key is "<animeId>:<episode>". */
 export type Position = { t: number; d: number; u?: number };
 
+export type Favorite = SavedAnime & { on: boolean; updatedAt: number };
+
+export type CustomList = {
+  id: string;
+  name: string;
+  items: SavedAnime[];
+  updatedAt: number;
+  /** Kept as a tombstone so the deletion syncs. */
+  deleted?: boolean;
+};
+
+export type AniListLink = {
+  token: string;
+  /** ms timestamp the token stops working. */
+  expiresAt: number;
+  userId: number;
+  name: string;
+  avatar: string | null;
+  /** Push progress and status changes to AniList as they happen. */
+  autoSync: boolean;
+};
+
+export type Profile = {
+  avatar?: string | null;
+  /** Two-way link via AniList login (needs the site's AniList client id). */
+  anilist?: AniListLink | null;
+  /** One-way link: a public AniList username whose list is re-imported automatically. */
+  anilistUser?: string | null;
+  updatedAt: number;
+};
+
 export type LibraryState = {
   history: HistoryEntry[];
   watchlist: WatchlistEntry[];
   positions: Record<string, Position>;
   lists: Record<string, ListEntry>;
+  favorites: Record<string, Favorite>;
+  customLists: Record<string, CustomList>;
+  profile: Profile;
+  /** Notification id → time it was seen. */
+  seen: Record<string, number>;
   /** Deletions, so a removal on one device isn't undone by another: id → time. */
   removed: { history: Record<string, number>; watchlist: Record<string, number> };
 };
 
 export function emptyState(): LibraryState {
-  return { history: [], watchlist: [], positions: {}, lists: {}, removed: { history: {}, watchlist: {} } };
+  return {
+    history: [],
+    watchlist: [],
+    positions: {},
+    lists: {},
+    favorites: {},
+    customLists: {},
+    profile: { updatedAt: 0 },
+    seen: {},
+    removed: { history: {}, watchlist: {} },
+  };
 }
 
 function newer<T>(a: T | undefined, b: T | undefined, time: (x: T) => number): T | undefined {
@@ -91,6 +137,21 @@ export function mergeState(a: Partial<LibraryState>, b: Partial<LibraryState>): 
   const lists: Record<string, ListEntry> = { ...a.lists };
   for (const [k, l] of Object.entries(b.lists ?? {})) lists[k] = newer(lists[k], l, (x) => x.updatedAt)!;
 
+  const favorites: Record<string, Favorite> = { ...a.favorites };
+  for (const [k, f] of Object.entries(b.favorites ?? {})) favorites[k] = newer(favorites[k], f, (x) => x.updatedAt)!;
+
+  const customLists: Record<string, CustomList> = { ...a.customLists };
+  for (const [k, c] of Object.entries(b.customLists ?? {})) customLists[k] = newer(customLists[k], c, (x) => x.updatedAt)!;
+
+  const profile = newer(a.profile, b.profile, (x) => x.updatedAt) ?? { updatedAt: 0 };
+
+  // Keep the 300 most recently seen notification ids.
+  const seen = Object.fromEntries(
+    Object.entries(maxMap(a.seen, b.seen))
+      .sort((x, y) => y[1] - x[1])
+      .slice(0, 300),
+  );
+
   return {
     history: [...history.values()]
       .filter((h) => (removed.history[h.id] ?? 0) < h.updatedAt)
@@ -101,6 +162,10 @@ export function mergeState(a: Partial<LibraryState>, b: Partial<LibraryState>): 
       .sort((x, y) => (y.addedAt ?? 0) - (x.addedAt ?? 0)),
     positions,
     lists,
+    favorites,
+    customLists,
+    profile,
+    seen,
     removed,
   };
 }
