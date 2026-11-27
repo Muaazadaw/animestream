@@ -27,6 +27,7 @@ import {
   type SavedAnime,
 } from "@/lib/storage";
 import { useAccount } from "@/lib/sync";
+import { getMode } from "@/lib/mode";
 import { openSettings } from "@/lib/settings-modal";
 
 type Entry = ListEntry & { favorite: boolean };
@@ -147,6 +148,7 @@ export default function LibraryPage() {
 
   // /library?view=history (from Settings) opens Continue watching.
   useEffect(() => {
+    if (getMode() === "manga") setKind("MANGA");
     if (new URLSearchParams(window.location.search).get("view") === "history") setView("HISTORY");
   }, []);
 

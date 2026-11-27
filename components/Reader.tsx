@@ -118,6 +118,17 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Fullscreen isn't available on iPhone, so the button only shows where it works.
+  const [canFullscreen, setCanFullscreen] = useState(false);
+  useEffect(() => setCanFullscreen(!!document.fullscreenEnabled), []);
+
+  // Paged mode on phones: swipe left for the next page, right for the previous one.
+  const touch = useRef<{ x: number; y: number } | null>(null);
+  const turn = (dir: 1 | -1) => {
+    if (dir > 0) page < images.length - 1 ? setPage(page + 1) : go(next);
+    else page > 0 ? setPage(page - 1) : go(prev);
+  };
+
   const fullscreen = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
     else void document.documentElement.requestFullscreen?.().catch(() => {});
@@ -156,9 +167,19 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
             className="reader__page"
             onClick={(e) => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              const right = e.clientX - r.left > r.width / 2;
-              if (right) page < images.length - 1 ? setPage(page + 1) : go(next);
-              else page > 0 ? setPage(page - 1) : go(prev);
+              turn(e.clientX - r.left > r.width / 2 ? 1 : -1);
+            }}
+            onTouchStart={(e) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY })}
+            onTouchEnd={(e) => {
+              const start = touch.current;
+              touch.current = null;
+              if (!start || e.touches.length) return;
+              const dx = e.changedTouches[0].clientX - start.x;
+              const dy = e.changedTouches[0].clientY - start.y;
+              if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                e.preventDefault(); // don't also count it as a tap
+                turn(dx < 0 ? 1 : -1);
+              }
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -235,9 +256,11 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
         >
           <Icon name={paged ? "layers" : "image"} size={18} />
         </button>
-        <button title="Fullscreen" aria-label="Fullscreen" onClick={fullscreen}>
-          <Icon name="monitor" size={18} />
-        </button>
+        {canFullscreen ? (
+          <button title="Fullscreen" aria-label="Fullscreen" onClick={fullscreen}>
+            <Icon name="monitor" size={18} />
+          </button>
+        ) : null}
       </nav>
 
       {panel === "chapters" ? (
@@ -298,7 +321,7 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
             <label className="reader__check">
               <input type="checkbox" checked={prefs.saver} onChange={(e) => setPrefs({ saver: e.target.checked })} /> Data saver (smaller images)
             </label>
-            <p className="muted reader__keys">Keys: ← → change page or chapter · Esc closes this panel</p>
+            <p className="muted reader__keys">Tap or swipe to turn pages · Keys: ← → change page or chapter</p>
           </div>
         </aside>
       ) : null}

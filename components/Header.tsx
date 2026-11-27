@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { getMode, MODE_EVENT, setMode, type Mode } from "@/lib/mode";
 import { logout, useAccount } from "@/lib/sync";
 import { openSettings } from "@/lib/settings-modal";
 import AccountMenu from "./AccountMenu";
@@ -16,6 +17,24 @@ const NAV = [
   { href: "/schedule", label: "Schedule", icon: "calendar" },
   { href: "/library", label: "My List", icon: "library" },
 ];
+const MANGA_NAV = [
+  { href: "/manga", label: "Home", icon: "home" },
+  { href: "/search?type=manga&sort=TRENDING_DESC", label: "Trending", icon: "flame" },
+  { href: "/search?type=manga", label: "Browse", icon: "compass" },
+  { href: "/library", label: "My List", icon: "library" },
+];
+
+/** Switches the remembered mode when you open an anime-only or manga-only page. */
+function ModeWatcher() {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const type = params.get("type");
+  useEffect(() => {
+    if (pathname.startsWith("/manga") || (pathname === "/search" && type === "manga")) setMode("manga");
+    else if (pathname === "/" || /^\/(anime|watch|schedule|trending|search)(\/|$)/.test(pathname)) setMode("anime");
+  }, [pathname, type]);
+  return null;
+}
 
 /** Left icon rail (bottom bar on phones) plus a top bar with search and the account menu. */
 export default function Header() {
@@ -24,6 +43,8 @@ export default function Header() {
   const { user } = useAccount();
   const [q, setQ] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  // Phones: the search field opens over the top bar when you tap the icon.
+  const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // "/" jumps to the search bar (unless you're already typing somewhere).
@@ -46,15 +67,25 @@ export default function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Manga mode: the manga pages, or search with ?type=manga.
-  const [mangaSearch, setMangaSearch] = useState(false);
+  // Manga mode: on the manga pages, and on shared pages (My List, settings) after you picked it.
+  const [mode, setModeState] = useState<Mode>("anime");
   useEffect(() => {
-    setMangaSearch(pathname === "/search" && new URLSearchParams(window.location.search).get("type") === "manga");
-  }, [pathname]);
-  const manga = pathname.startsWith("/manga") || mangaSearch;
+    const sync = () => setModeState(getMode());
+    sync();
+    window.addEventListener(MODE_EVENT, sync);
+    return () => window.removeEventListener(MODE_EVENT, sync);
+  }, []);
+  const manga = pathname.startsWith("/manga") || mode === "manga";
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    const input = searchRef.current;
+    if (input && getComputedStyle(input).display === "none") {
+      setSearchOpen(true);
+      setTimeout(() => searchRef.current?.focus(), 0);
+      return;
+    }
+    setSearchOpen(false);
     const term = q.trim();
     const params = new URLSearchParams();
     if (manga) params.set("type", "manga");
@@ -62,7 +93,14 @@ export default function Header() {
     router.push(`/search${params.size ? `?${params}` : ""}`);
   }
 
-  const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const nav = manga ? MANGA_NAV : NAV;
+  const active = (href: string) => {
+    const [path, query] = href.split("?");
+    if (path === "/" || path === "/manga") return pathname === path;
+    // Search sorted by trending (manga mode's Trending) still lights up Browse.
+    if (path === "/search") return pathname === "/search" && !query?.includes("TRENDING");
+    return pathname.startsWith(path);
+  };
 
   // The sign-in, invite and admin screens are full-page cards without the site chrome.
   if (/^\/(gate|admin|settings\/anilist)(\/|$)/.test(pathname)) return null;
@@ -71,12 +109,15 @@ export default function Header() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <ModeWatcher />
+      </Suspense>
       <aside className="rail">
         <Link href="/" className="rail__logo" aria-label="Mayoi home">
           <LogoMark size={40} />
         </Link>
         <nav className="rail__nav">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <Link key={n.href} href={n.href} className={`rail__item ${active(n.href) ? "is-active" : ""}`} title={n.label}>
               <Icon name={n.icon} size={20} />
               <span className="rail__label">{n.label}</span>
@@ -104,25 +145,37 @@ export default function Header() {
 
       <header className={`topbar ${scrolled ? "topbar--solid" : ""}`}>
         <div className="topbar__left">
+          {pathname !== "/" && pathname !== "/manga" ? (
+            <button
+              className="topbar__back"
+              aria-label="Back"
+              title="Back"
+              onClick={() => (window.history.length > 1 ? router.back() : router.push(manga ? "/manga" : "/"))}
+            >
+              <Icon name="prev" size={18} />
+            </button>
+          ) : null}
           <Link href={manga ? "/manga" : "/"} className="topbar__logo" aria-label="Mayoi home">
             <Logo />
           </Link>
           <nav className="mode" aria-label="Anime or manga">
-            <Link href="/" className={!manga ? "is-active" : ""}>
+            <Link href="/" className={!manga ? "is-active" : ""} onClick={() => setMode("anime")}>
               Anime
             </Link>
-            <Link href="/manga" className={manga ? "is-active" : ""}>
+            <Link href="/manga" className={manga ? "is-active" : ""} onClick={() => setMode("manga")}>
               Manga
             </Link>
           </nav>
         </div>
-        <form className="search" onSubmit={submit} role="search">
+        <form className={`search ${searchOpen ? "is-open" : ""}`} onSubmit={submit} role="search">
           <input
             ref={searchRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={manga ? "Search manga…" : "Search anime…"}
             aria-label={manga ? "Search manga" : "Search anime"}
+            onBlur={(e) => !e.currentTarget.value && setSearchOpen(false)}
+            onKeyDown={(e) => e.key === "Escape" && (setSearchOpen(false), e.currentTarget.blur())}
           />
           <button type="submit" aria-label="Search">
             <Icon name="search" size={17} />

@@ -1323,6 +1323,31 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 /* Anime / Manga switch in the top bar */
 .topbar__left { display: flex; align-items: center; gap: 14px; justify-self: start; min-width: 0; }
 .topbar { grid-template-columns: minmax(max-content, 1fr) minmax(0, 460px) 1fr; }
+.topbar__back {
+  display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; cursor: pointer;
+  background: rgba(28, 28, 39, 0.85); border: 1px solid var(--line); color: var(--text);
+}
+.topbar__back:hover { border-color: var(--accent-2); }
+@media (max-width: 760px) {
+  .topbar__left { gap: 8px; }
+  .topbar__back { width: 32px; height: 32px; }
+  /* Phones: search shrinks to its icon, which opens the search page. */
+  .topbar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+  .topbar .search { justify-self: end; width: 38px; height: 38px; border-radius: 50%; }
+  .topbar .search input { display: none; }
+  .topbar .search button { border-left: 0; padding: 0; width: 100%; }
+  .topbar .search.is-open {
+    position: absolute; left: 12px; right: 12px; top: calc(12px + var(--safe-top)); width: auto; border-radius: 10px; z-index: 2;
+    background: rgb(20, 20, 28);
+  }
+  .topbar .search.is-open input { display: block; }
+  .topbar .search.is-open button { width: 44px; }
+  .manga-detail .hero__actions > .btn--primary { flex: 1 1 100%; }
+  .manga-detail .hero__actions .mstatus { flex: 1; }
+  .manga-detail .hero__actions .mstatus .menu__btn { width: 100%; justify-content: center; }
+  .chapters__tools { width: 100%; }
+  .chapters__search { flex: 1; width: auto; }
+}
 .mode { display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(28, 28, 39, 0.85); border: 1px solid var(--line); }
 .mode a { padding: 5px 13px; border-radius: 999px; font-size: 13px; font-weight: 700; color: var(--muted); transition: background 0.2s, color 0.2s; }
 .mode a:hover { color: var(--text); }
@@ -1358,6 +1383,7 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 @media (max-width: 640px) { .mshelf .row__head { flex-wrap: wrap; } .mshelf__title span { display: none; } }
 
 /* Manga detail */
+.manga-detail { overflow-x: clip; }
 .manga-detail .detail__banner { overflow: hidden; }
 .manga-detail .detail__banner[data-blur] { filter: blur(30px) brightness(0.6); transform: scale(1.15); }
 .mchips { margin-bottom: -4px; }
@@ -1394,7 +1420,7 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 .chapters__more { margin-top: 12px; }
 
 /* Manga reader */
-.reader { min-height: 100vh; background: #050507; }
+.reader { min-height: 100vh; min-height: 100dvh; background: #050507; }
 .reader__top {
   position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: flex; align-items: center; gap: 12px;
   padding: calc(10px + var(--safe-top)) 16px 10px; background: linear-gradient(rgba(5, 5, 7, 0.95), rgba(5, 5, 7, 0));
@@ -1408,7 +1434,7 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 .reader__pages > img { width: 100%; max-width: 760px; height: auto; min-height: 300px; background: #0d0d12; }
 .reader--width .reader__pages > img { max-width: 1200px; }
 .reader--gap .reader__pages > img { margin-bottom: 10px; }
-.reader__page { position: relative; display: flex; justify-content: center; width: 100%; height: calc(100vh - 140px); cursor: pointer; user-select: none; }
+.reader__page { position: relative; display: flex; justify-content: center; width: 100%; height: calc(100vh - 140px); height: calc(100dvh - 140px); touch-action: pan-y pinch-zoom; cursor: pointer; user-select: none; }
 .reader__page img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .reader__preload { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .reader__msg { display: grid; place-items: center; gap: 14px; min-height: 60vh; text-align: center; }
@@ -1458,7 +1484,7 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
   .reader__tools { top: auto; bottom: calc(70px + var(--safe-bottom)); transform: none; right: 10px; }
   .reader.is-hidden .reader__tools { transform: translateX(140%); }
   .reader__panel { right: 10px; left: 10px; width: auto; top: auto; bottom: calc(70px + var(--safe-bottom)); transform: none; max-height: 60vh; }
-  .reader__page { height: calc(100vh - 120px); }
+  .reader__page { height: calc(100dvh - 120px); }
 }
 
 /* My List: anime / manga switch */
