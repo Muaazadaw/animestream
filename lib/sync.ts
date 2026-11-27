@@ -6,7 +6,7 @@
 // (and right away when the tab is hidden or closed).
 
 import { useEffect, useState } from "react";
-import { exportState, getProfile, importState, LOCAL_CHANGE_EVENT, setProfile } from "./storage";
+import { clearLibrary, exportState, getProfile, importState, LOCAL_CHANGE_EVENT, setProfile } from "./storage";
 import type { LibraryState } from "./state";
 
 export const AUTH_EVENT = "as:auth";
@@ -31,6 +31,23 @@ function setStatus(s: SyncStatus) {
   emit();
 }
 
+const OWNER_KEY = "as:library-owner";
+
+/**
+ * The library in this browser belongs to one account. Signing in as a different
+ * one starts from that account's own library instead of merging the last
+ * person's list into it.
+ */
+function claimLibrary(account: string) {
+  try {
+    const owner = localStorage.getItem(OWNER_KEY);
+    if (owner && owner !== account) clearLibrary();
+    localStorage.setItem(OWNER_KEY, account);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 export async function refreshUser(): Promise<string | null> {
   try {
     const r = await fetch("/api/auth", { cache: "no-store" });
@@ -40,6 +57,7 @@ export async function refreshUser(): Promise<string | null> {
       return null;
     }
     user = data.user;
+    if (user) claimLibrary(user);
     createdAt = data.createdAt ?? null;
     display = data.display ?? null;
   } catch {
@@ -117,6 +135,7 @@ export async function loginLocal(action: "signup" | "login", username: string, p
   const data = (await r.json().catch(() => ({}))) as { user?: string; error?: string; needsInvite?: boolean };
   if (!r.ok) return { error: data.error ?? "Something went wrong.", needsInvite: data.needsInvite };
   user = data.user ?? null;
+  if (user) claimLibrary(user);
   emit();
   await syncNow();
   return null;
@@ -135,6 +154,7 @@ export async function loginWithAniList(token: string): Promise<{ error: string; 
   const data = (await r.json().catch(() => ({}))) as { user?: string; error?: string; needsInvite?: boolean };
   if (!r.ok) return { error: data.error ?? "Something went wrong.", needsInvite: data.needsInvite };
   user = data.user ?? null;
+  if (user) claimLibrary(user);
   void refreshUser(); // picks up the account's join date
   emit();
   // First sign-in on this device: upload what's here and pull what's there.

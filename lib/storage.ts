@@ -261,6 +261,17 @@ export function markSeen(ids: string[], read = true) {
   if (changed) write(SEEN_KEY, seen);
 }
 
+/** Forget this browser's library: lists, history, favourites, profile. Used when another account signs in here. */
+export function clearLibrary() {
+  try {
+    for (const k of [HISTORY_KEY, LIST_KEY, LISTS_KEY, FAVORITES_KEY, CUSTOM_KEY, PROFILE_KEY, SEEN_KEY, REMOVED_KEY]) localStorage.removeItem(k);
+    for (const k of Object.keys(localStorage)) if (k.startsWith(POS_PREFIX)) localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable */
+  }
+  window.dispatchEvent(new Event(STORAGE_EVENT));
+}
+
 /** Everything above, as one document for syncing. */
 export function exportState(): LibraryState {
   const positions: Record<string, Position> = {};
