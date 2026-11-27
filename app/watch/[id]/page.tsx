@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import WhereToWatch from "@/components/WhereToWatch";
-import { getAnime, prettyEnum, titleOf } from "@/lib/anilist";
+import { getAnime, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
+import type { SideMedia } from "@/components/SideMediaList";
 import { getEpisodeMeta } from "@/lib/extras";
 import { episodesFor, toAnimeRef, withTimeout } from "@/lib/sources";
 import WatchClient, { type Season } from "./WatchClient";
@@ -32,29 +33,46 @@ export default async function WatchPage({ params, searchParams }: Props) {
   ]);
 
   // Prequels and sequels, in release order, around this entry.
-  const seasons: Season[] = [
+  const ordered = [
     ...m.relations.edges
       .filter((e) => e.node.type === "ANIME" && (e.relationType === "PREQUEL" || e.relationType === "SEQUEL"))
       .map((e) => ({
         id: e.node.id,
         title: titleOf(e.node.title),
         cover: e.node.bannerImage ?? e.node.coverImage.extraLarge,
-        label: `${prettyEnum(e.relationType)} · ${prettyEnum(e.node.format)}`,
-        year: e.node.seasonYear ?? 0,
+        format: e.node.format,
+        year: e.node.seasonYear ?? null,
         order: e.relationType === "PREQUEL" ? -1 : 1,
       })),
-    {
-      id: m.id,
-      title,
-      cover: m.bannerImage ?? m.coverImage.extraLarge,
-      label: `Now watching · ${prettyEnum(m.format)}`,
-      year: m.seasonYear ?? 0,
-      order: 0,
-      current: true,
-    },
-  ]
-    .sort((a, b) => a.order - b.order || a.year - b.year)
-    .map(({ year: _y, order: _o, ...s }) => s);
+    { id: m.id, title, cover: m.bannerImage ?? m.coverImage.extraLarge, format: m.format, year: m.seasonYear ?? null, order: 0, current: true },
+  ].sort((a, b) => a.order - b.order || (a.year ?? 0) - (b.year ?? 0));
+  // "Season 1, Season 2…" for series; "Movie", "OVA"… for the rest.
+  let seasonNo = 0;
+  const seasons: Season[] = ordered.map(({ order: _o, format, ...s }) => ({
+    ...s,
+    label: format === "TV" || format === "TV_SHORT" || format === "ONA" ? `Season ${++seasonNo}` : prettyEnum(format) || "Special",
+  }));
+
+  const side = (n: MediaCard, relation?: string): SideMedia => ({
+    id: n.id,
+    title: titleOf(n.title),
+    cover: n.coverImage.large,
+    banner: n.bannerImage,
+    format: n.format,
+    status: n.status,
+    year: n.seasonYear,
+    episodes: n.episodes,
+    score: n.averageScore,
+    relation: relation ? prettyEnum(relation) : null,
+  });
+  const related = m.relations.edges
+    .filter((e) => e.node.type === "ANIME" && e.relationType !== "PREQUEL" && e.relationType !== "SEQUEL")
+    .map((e) => side(e.node, e.relationType));
+  const recommendations = m.recommendations.nodes
+    .map((n) => n.mediaRecommendation)
+    .filter((r): r is MediaCard => !!r)
+    .slice(0, 10)
+    .map((r) => side(r));
 
   if (providers.length === 0) {
     return (
@@ -78,7 +96,11 @@ export default async function WatchPage({ params, searchParams }: Props) {
         banner: m.bannerImage,
         format: m.format,
         episodes: m.episodes,
+        season: m.season,
+        seasonYear: m.seasonYear,
       }}
+      related={related}
+      recommendations={recommendations}
       providers={providers}
       meta={meta}
       seasons={seasons}

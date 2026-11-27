@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Menu, { Icon, MenuItem } from "@/components/Menu";
 import Player from "@/components/Player";
-import WatchlistButton from "@/components/WatchlistButton";
+import ListStatusMenu from "@/components/ListStatusMenu";
+import SideMediaList, { type SideMedia } from "@/components/SideMediaList";
 import type { EpisodeMeta } from "@/lib/extras";
 import type { ProviderEpisodes } from "@/lib/sources";
 import type { EpisodeInfo, Stream } from "@/lib/sources/types";
@@ -21,10 +22,12 @@ import {
   type SavedAnime,
 } from "@/lib/storage";
 
-export type Season = { id: number; title: string; cover: string | null; label: string; current?: boolean };
+export type Season = { id: number; title: string; cover: string | null; label: string; year: number | null; current?: boolean };
 
 type Props = {
-  anime: SavedAnime & { banner: string | null };
+  anime: SavedAnime & { banner: string | null; season: string | null; seasonYear: number | null };
+  related: SideMedia[];
+  recommendations: SideMedia[];
   providers: ProviderEpisodes[];
   meta: Record<number, EpisodeMeta>;
   seasons: Season[];
@@ -43,7 +46,8 @@ function formatDate(d?: string) {
     : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-export default function WatchClient({ anime, providers, meta, seasons, initialEp, initialSource, initialAudio }: Props) {
+export default function WatchClient({ anime, related, recommendations, providers, meta, seasons, initialEp, initialSource, initialAudio }: Props) {
+  const [synopsisOpen, setSynopsisOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [sourceId, setSourceId] = useState(
     providers.find((p) => p.id === initialSource)?.id ?? providers[0].id,
@@ -70,6 +74,12 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
   const next = idx >= 0 && idx < episodes.length - 1 ? episodes[idx + 1] : null;
   const hasAudio = (p: ProviderEpisodes, a: Audio) => p.audio.includes(a);
   const dubAnywhere = providers.some((p) => hasAudio(p, "dub"));
+  // For the show card: how many episodes are out subbed / dubbed across the servers.
+  const subCount = Math.max(0, ...providers.filter((p) => hasAudio(p, "sub")).map((p) => p.episodes.length));
+  const dubCount = Math.max(
+    0,
+    ...providers.map((p) => p.episodes.filter((e) => e.dub || (hasAudio(p, "dub") && !hasAudio(p, "sub"))).length),
+  );
 
   // On first mount: restore prefs, preferred server/audio and last-watched episode.
   useEffect(() => {
@@ -363,23 +373,46 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
             </div>
           </div>
 
-          {currentMeta?.overview && !isSpoiler(ep) ? <p className="watch__overview">{currentMeta.overview}</p> : null}
-
-          {/* Phones: the show under the player, like the detail page header. */}
+          {/* The show, your list status and this episode's synopsis. */}
           <div className="watch__card">
-            <Link href={`/anime/${anime.id}`} className="watch__cardlink">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={anime.cover ?? undefined} alt="" />
-              <span>
-                <strong>{anime.title}</strong>
-                <em>
-                  {[anime.format?.replace(/_/g, " "), anime.episodes ? `${anime.episodes} eps` : null].filter(Boolean).join(" · ")}
-                </em>
-              </span>
-            </Link>
-            <WatchlistButton
-              anime={{ id: anime.id, title: anime.title, cover: anime.cover, format: anime.format, episodes: anime.episodes }}
-            />
+            <div className="watch__cardtop">
+              <Link href={`/anime/${anime.id}`} className="watch__cardlink">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={anime.cover ?? undefined} alt="" />
+                <span>
+                  <strong>{anime.title}</strong>
+                  <em>
+                    {anime.season || anime.seasonYear ? (
+                      <span>{[anime.season ? anime.season[0] + anime.season.slice(1).toLowerCase() : null, anime.seasonYear].filter(Boolean).join(" ")}</span>
+                    ) : anime.format ? (
+                      <span>{anime.format.replace(/_/g, " ")}</span>
+                    ) : null}
+                    {subCount ? (
+                      <span>
+                        <Icon name="cc" size={12} /> {subCount}
+                      </span>
+                    ) : null}
+                    {dubCount ? (
+                      <span>
+                        <Icon name="mic" size={12} /> {dubCount}
+                      </span>
+                    ) : null}
+                  </em>
+                </span>
+              </Link>
+              <ListStatusMenu anime={{ id: anime.id, title: anime.title, cover: anime.cover, format: anime.format, episodes: anime.episodes }} />
+            </div>
+            {currentMeta?.overview && !isSpoiler(ep) ? (
+              <>
+                <p className={`watch__synopsis ${synopsisOpen ? "is-open" : ""}`}>{currentMeta.overview}</p>
+                <div className="watch__synfoot">
+                  <span>Episode synopsis</span>
+                  <button onClick={() => setSynopsisOpen((o) => !o)}>
+                    {synopsisOpen ? "Show less" : "Show more"} <Icon name="chevron" size={13} />
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -497,15 +530,20 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                     key={s.id}
                     href={`/watch/${s.id}`}
                     className={`season ${s.current ? "is-active" : ""}`}
+                    title={s.title}
                     style={{ backgroundImage: s.cover ? `url(${s.cover})` : undefined }}
                   >
+                    {s.current ? <span className="season__badge">Current</span> : null}
                     <span className="season__label">{s.label}</span>
-                    <span className="season__title">{s.title}</span>
+                    {s.year ? <span className="season__year">{s.year}</span> : null}
                   </Link>
                 ))}
               </div>
             </div>
           ) : null}
+
+          <SideMediaList title="Related" items={related} />
+          <SideMediaList title="Recommendations" items={recommendations} />
         </aside>
       </div>
     </div>
