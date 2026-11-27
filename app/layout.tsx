@@ -7,6 +7,7 @@ import ListEditor from "@/components/ListEditor";
 import SettingsModal from "@/components/SettingsModal";
 import SyncClient from "@/components/SyncClient";
 import { APPEARANCE_SCRIPT } from "@/lib/appearance";
+import { DEVICE_SCRIPT } from "@/lib/device";
 import { UPDATED, UPDATES, VERSION } from "@/lib/version";
 import "./globals.css";
 
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         {/* Applies the saved theme/accent before the first paint, so it doesn't flash. */}
         <script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: DEVICE_SCRIPT }} />
       </head>
       <body className={captionFont.variable}>
         <SyncClient />

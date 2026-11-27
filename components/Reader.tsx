@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_READER_PREFS, getReaderPrefs, saveReaderPrefs, useChapters, type Chapter, type ReaderPrefs } from "@/lib/manga/client";
+import { perfTier } from "@/lib/device";
 import { getLists, markChapterRead, type SavedAnime } from "@/lib/storage";
 import { Icon } from "./Menu";
 
@@ -73,6 +74,9 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   const go = (c: { id: string } | null) => c && router.push(`/manga/${manga.id}/read/${c.id}`);
 
   const images = data ? (prefs.saver && data.saver?.length ? data.saver : data.pages) : [];
+  // Pages loaded straight away in the strip; the rest load as you scroll. Fewer on low-memory phones.
+  const [eager, setEager] = useState(3);
+  useEffect(() => setEager(perfTier() === "low" ? 1 : 3), []);
   const strip = prefs.mode === "vertical";
   const step = prefs.mode === "double" ? 2 : 1;
   const lastPage = Math.max(0, images.length - 1);
@@ -218,7 +222,7 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           <div className="reader__strip" ref={stripRef}>
             {images.map((src, i) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={src} src={src} alt={`Page ${i + 1}`} loading={i < 3 ? "eager" : "lazy"} referrerPolicy="no-referrer" />
+              <img key={src} src={src} alt={`Page ${i + 1}`} loading={i < eager ? "eager" : "lazy"} decoding="async" referrerPolicy="no-referrer" />
             ))}
           </div>
         ) : (

@@ -5,6 +5,7 @@ import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { setUpscaleMode, startAnime4K, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
+import { hlsBuffers, perfTier } from "@/lib/device";
 import type { Stream } from "@/lib/sources/types";
 
 // The same player features as Player.tsx (Plyr), built on ArtPlayer
@@ -136,6 +137,7 @@ export default function ArtPlayerView({
                 },
               ]
             : []),
+          ...(perfTier() === "low" ? [] : [
           {
             name: "anime4k",
             html: "Anime4K",
@@ -146,6 +148,7 @@ export default function ArtPlayerView({
               return item.html;
             },
           },
+          ]),
         ] as unknown as Artplayer["option"]["settings"],
         customType: {
           m3u8(video: HTMLVideoElement, url: string, player: Artplayer) {
@@ -155,7 +158,7 @@ export default function ArtPlayerView({
               return;
             }
             hls?.destroy();
-            hls = new Hls({ enableWorker: true, capLevelToPlayerSize: true, startLevel: 0, maxBufferLength: 30, maxMaxBufferLength: 120 });
+            hls = new Hls({ enableWorker: true, capLevelToPlayerSize: true, startLevel: 0, ...hlsBuffers() });
             let retries = 0;
             let recoveries = 0;
             let srcIndex = 0;

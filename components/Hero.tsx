@@ -56,6 +56,7 @@ export default function Hero({ items }: { items: HeroItem[] }) {
   // Autoplay; restarts whenever the slide changes.
   useEffect(() => {
     if (paused || count < 2) return;
+    if (document.documentElement.dataset.perf === "low") return; // no auto-rotate on low-memory phones
     const t = setTimeout(() => go(i + 1), INTERVAL_MS);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

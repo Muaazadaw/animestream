@@ -84,6 +84,8 @@ export const DEFAULT_READER_PREFS: ReaderPrefs = {
 export function getReaderPrefs(): ReaderPrefs {
   try {
     const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
+    // Low-memory phones start with smaller page images (until changed in settings).
+    if (saved.saver === undefined && document.documentElement.dataset.perf === "low") saved.saver = true;
     // Older settings: "paged" mode, "fit: width" and a gap toggle.
     if (saved.mode === "paged") saved.mode = "single";
     if (saved.fit === "width") saved.fitWidth = true;

@@ -5,6 +5,7 @@ import type Plyr from "plyr";
 import "plyr/dist/plyr.css";
 import { useEffect, useRef, useState } from "react";
 import { setUpscaleMode, startAnime4K, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
+import { hlsBuffers, perfTier } from "@/lib/device";
 import type { Stream } from "@/lib/sources/types";
 
 // Video player built on Plyr (controls, captions, settings, keyboard) with
@@ -68,6 +69,7 @@ const UPSCALE_NOTE: Record<UpscaleMode, string> = { off: "", A: "Sharp", B: "Sof
  * (styled like Quality / Speed) with its own Off / Mode A / B / C page.
  */
 function addUpscaleMenu(root: HTMLElement) {
+  if (perfTier() === "low") return;
   const container = root.querySelector<HTMLElement>(".plyr__menu__container");
   const home = container?.querySelector<HTMLElement>('[id$="-home"]');
   const homeMenu = home?.querySelector<HTMLElement>('[role="menu"]');
@@ -232,8 +234,8 @@ export default function Player({
           // auto quality then steps up as bandwidth allows.
           startLevel: 0,
           startFragPrefetch: true,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 120,
+          // Less video kept in memory on phones with little RAM.
+          ...hlsBuffers(),
         });
         let recoveries = 0;
         let retries = 0;
