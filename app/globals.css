@@ -1820,3 +1820,68 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
   padding: 3px 10px; border-radius: 6px; font-size: 13px; font-weight: 800; color: #1a1208;
   background: color-mix(in srgb, var(--chip) 72%, #e7b37c); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
 }
+
+/* Manga: chapter list (one row per chapter, like a reader site) */
+.chapters__title { font-size: 20px; margin-bottom: 10px; }
+.chapters__title span { color: var(--muted); font-size: 14px; font-weight: 600; margin-left: 6px; }
+.clist { border-radius: 14px; background: var(--bg-2); border: 1px solid var(--line); overflow: hidden; }
+.clist__bar { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.clist__search { flex: 1 1 200px; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 9px; background: var(--bg-3); color: var(--muted); }
+.clist__search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); font-size: 13px; }
+.clist__pill, .clist__sort { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 9px; background: var(--bg-3); font-size: 13px; font-weight: 700; }
+.clist__pill em, .clist__sort em { font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.clist__sort { padding: 0 3px 0 10px; }
+.clist__sort button { height: 30px; padding: 0 12px; border-radius: 7px; border: 0; background: none; color: var(--muted); font-weight: 700; font-size: 13px; cursor: pointer; }
+.clist__sort button.is-active { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+.clist__rows { display: flex; flex-direction: column; }
+.clist__empty { padding: 20px 16px; }
+.crow { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); font-size: 14px; }
+.crow:last-child { border-bottom: 0; }
+.crow:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+.crow__lang { font-size: 11px; font-weight: 700; color: var(--muted); width: 20px; }
+.crow__num { font-weight: 800; white-space: nowrap; }
+.crow__title { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crow__when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.crow__mark { display: grid; place-items: center; width: 22px; color: rgba(255, 255, 255, 0.25); }
+.crow.is-read .crow__num { color: var(--muted); }
+.crow.is-read .crow__mark { color: color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.crow.is-here { background: color-mix(in srgb, var(--accent-2) 10%, transparent); }
+.crow.is-here .crow__num { color: var(--text); }
+.crow.is-here .crow__mark { color: var(--accent); }
+.crow.is-here .crow__mark svg { fill: currentColor; }
+.crow--skeleton { min-height: 44px; background: linear-gradient(90deg, var(--bg-2), var(--bg-3), var(--bg-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+.cpages { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 18px; flex-wrap: wrap; }
+.cpages button { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 8px; border: 0; background: var(--bg-2); color: var(--text); font-weight: 700; font-size: 13px; cursor: pointer; }
+.cpages button:hover { background: var(--bg-3); }
+.cpages button.is-active { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+.cpages__gap { color: var(--muted); padding: 0 2px; }
+@media (max-width: 640px) {
+  .crow { gap: 10px; padding: 0 12px; }
+  .crow__lang { display: none; }
+  .clist__pill { display: none; }
+}
+
+/* Continue watching: big play button, EP / time pills, thin progress line, ✕ to remove */
+.cw__frame { position: relative; }
+.cw .card__img::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.1) 45%, rgba(0, 0, 0, 0.25)); pointer-events: none; }
+.cw__play {
+  position: absolute; left: 50%; top: 50%; z-index: 2; display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%;
+  transform: translate(-50%, -50%); background: #fff; color: #0b0b0f; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); transition: transform 0.2s;
+}
+.cw__play svg { margin-left: 3px; }
+.cw .card__img:hover .cw__play { transform: translate(-50%, -50%) scale(1.08); }
+.cw__pill {
+  position: absolute; bottom: 12px; z-index: 2; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; color: #fff;
+  background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(4px);
+}
+.cw__pill--ep { left: 10px; }
+.cw__pill--time { right: 10px; font-variant-numeric: tabular-nums; }
+.cw__bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; height: 3px; background: rgba(255, 255, 255, 0.18); }
+.cw__bar span { display: block; height: 100%; background: #ff3b47; }
+.cw__x {
+  position: absolute; top: 8px; right: 8px; z-index: 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  border: 0; background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer; opacity: 0; transition: opacity 0.15s, background 0.15s;
+}
+.cw__frame:hover .cw__x, .cw__x:focus-visible { opacity: 1; }
+.cw__x:hover { background: rgba(0, 0, 0, 0.75); }
+@media (hover: none) { .cw__x { opacity: 1; } }

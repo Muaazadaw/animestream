@@ -24,35 +24,37 @@ function clock(s: number) {
 export function HistoryCard({ h }: { h: HistoryEntry }) {
   const pct = h.duration ? Math.min(100, (h.time / h.duration) * 100) : 0;
   return (
-    <div className="card card--wide">
-      <Link href={`/watch/${h.id}?ep=${h.episode}`} className="card__img card__img--wide">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={h.cover ?? undefined} alt="" loading="lazy" />
-        <span className="card__badge card__badge--dark">
-          EP {h.episode}
-          {h.episodes ? ` / ${h.episodes}` : ""}
-        </span>
-        {h.duration ? (
-          <span className="card__time">
-            {clock(h.time)} / {clock(h.duration)}
+    <div className="card card--wide cw">
+      <div className="cw__frame">
+        <Link href={`/watch/${h.id}?ep=${h.episode}`} className="card__img card__img--wide" aria-label={`Continue ${h.title}, episode ${h.episode}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={h.cover ?? undefined} alt="" loading="lazy" />
+          <span className="cw__play" aria-hidden>
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+              <path d="M8 5.5v13l10.5-6.5z" />
+            </svg>
           </span>
-        ) : null}
-        <span className="card__play" aria-hidden>
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
+          <span className="cw__pill cw__pill--ep">
+            EP {h.episode}
+            {h.episodes ? ` / ${h.episodes}` : ""}
+          </span>
+          {h.duration ? (
+            <span className="cw__pill cw__pill--time">
+              {clock(h.time)} / {clock(h.duration)}
+            </span>
+          ) : null}
+          <span className="cw__bar">
+            <span style={{ width: `${pct}%` }} />
+          </span>
+        </Link>
+        <button className="cw__x" onClick={() => removeHistory(h.id)} aria-label={`Remove ${h.title} from Continue Watching`} title="Remove">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <path d="M6 6l12 12M18 6 6 18" />
           </svg>
-        </span>
-        <span className="progress">
-          <span style={{ width: `${pct}%` }} />
-        </span>
-      </Link>
-      <div className="card__title">{h.title}</div>
-      <div className="card__meta">
-        Episode {h.episode}
-        <button className="link-btn" onClick={() => removeHistory(h.id)}>
-          Remove
         </button>
       </div>
+      <div className="card__title">{h.title}</div>
+      <div className="card__meta">Episode {h.episode}</div>
     </div>
   );
 }
