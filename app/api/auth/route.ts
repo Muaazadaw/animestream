@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  changePassword,
   checkPassword,
   createUser,
   currentUser,
@@ -13,17 +14,33 @@ import {
 // GET  /api/auth                                  → { user, createdAt }
 // POST /api/auth { action: "signup" | "login", username, password }
 // POST /api/auth { action: "logout" }
+// POST /api/auth { action: "password", password, newPassword }   (signed in)
 export async function GET() {
   const user = await currentUser();
   return NextResponse.json({ user, createdAt: user ? await userCreatedAt(user).catch(() => null) : null });
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { action?: string; username?: string; password?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    action?: string;
+    username?: string;
+    password?: string;
+    newPassword?: string;
+  };
 
   if (body.action === "logout") {
     await endSession();
     return NextResponse.json({ user: null });
+  }
+
+  if (body.action === "password") {
+    const user = await currentUser();
+    if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+    if ((body.newPassword ?? "").length < 8) {
+      return NextResponse.json({ error: "Passwords need at least 8 characters." }, { status: 400 });
+    }
+    const err = await changePassword(user, body.password ?? "", body.newPassword!);
+    return err ? NextResponse.json({ error: err }, { status: 400 }) : NextResponse.json({ user });
   }
 
   const name = normalizeName(body.username ?? "");

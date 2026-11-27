@@ -314,7 +314,17 @@ export type Prefs = {
   autoSyncList: boolean;
   /** Share of an episode (0–1) that counts as watched. */
   syncThreshold: number;
+  /** Where clicking an anime card goes. */
+  openOn: "info" | "watch";
+  theme: "dark" | "black";
+  /** Accent colour preset id (see ACCENTS). */
+  accent: string;
+  /** Corner roundness, 0–100 (50 = default). */
+  radius: number;
+  cardSize: "medium" | "large";
 };
+
+export { ACCENTS } from "./state";
 
 const DEFAULT_PREFS: Prefs = {
   autoplay: true,
@@ -328,12 +338,26 @@ const DEFAULT_PREFS: Prefs = {
   homeHistory: true,
   autoSyncList: true,
   syncThreshold: 0.8,
+  openOn: "info",
+  theme: "dark",
+  accent: "pink",
+  radius: 50,
+  cardSize: "medium",
 };
+
+export const APPEARANCE_EVENT = "as:appearance";
 
 export function getPrefs(): Prefs {
   return { ...DEFAULT_PREFS, ...read<Partial<Prefs>>(PREFS_KEY, {}) };
 }
 
+/** Put every preference back to its default (lists and history are untouched). */
+export function resetPrefs() {
+  write(PREFS_KEY, DEFAULT_PREFS, false);
+  window.dispatchEvent(new Event(APPEARANCE_EVENT));
+}
+
 export function setPrefs(p: Partial<Prefs>) {
   write(PREFS_KEY, { ...getPrefs(), ...p }, false);
+  window.dispatchEvent(new Event(APPEARANCE_EVENT));
 }

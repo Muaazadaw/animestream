@@ -44,6 +44,17 @@ export type ListEntry = SavedAnime & {
 /** Playback position of one episode; key is "<animeId>:<episode>". */
 export type Position = { t: number; d: number; u?: number };
 
+/** Accent presets: [main, secondary]. */
+export const ACCENTS: Record<string, { label: string; colors: [string, string] }> = {
+  pink: { label: "Mayoi (default)", colors: ["#d03a73", "#6a40e0"] },
+  rose: { label: "Bright pink", colors: ["#ff5c8a", "#a874ff"] },
+  violet: { label: "Violet", colors: ["#b69cff", "#7c5cff"] },
+  blue: { label: "Blue", colors: ["#4ea8ff", "#6c7bff"] },
+  green: { label: "Green", colors: ["#3ddc97", "#22b3a6"] },
+  orange: { label: "Orange", colors: ["#ff9f43", "#ff6b6b"] },
+  red: { label: "Red", colors: ["#ff4d5e", "#ff7a59"] },
+};
+
 export type Favorite = SavedAnime & { on: boolean; updatedAt: number };
 
 export type CustomList = {

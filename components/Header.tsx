@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { logout, useAccount } from "@/lib/sync";
+import { openSettings } from "@/lib/settings-modal";
 import AccountMenu from "./AccountMenu";
+import Logo, { LogoMark } from "./Logo";
 import { Icon } from "./Menu";
 
 const NAV = [
@@ -22,6 +24,20 @@ export default function Header() {
   const { user } = useAccount();
   const [q, setQ] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // "/" jumps to the search bar (unless you're already typing somewhere).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -41,8 +57,8 @@ export default function Header() {
   return (
     <>
       <aside className="rail">
-        <Link href="/" className="rail__logo" aria-label="AnimeStream home">
-          A<span>S</span>
+        <Link href="/" className="rail__logo" aria-label="Mayoi home">
+          <LogoMark size={40} />
         </Link>
         <nav className="rail__nav">
           {NAV.map((n) => (
@@ -53,7 +69,12 @@ export default function Header() {
           ))}
         </nav>
         <div className="rail__bottom">
-          <Link href="/settings" className={`rail__item ${active("/settings") ? "is-active" : ""}`} title="Settings">
+          <Link
+            href="/settings"
+            className={`rail__item ${active("/settings") ? "is-active" : ""}`}
+            title="Settings"
+            onClick={(e) => (e.preventDefault(), openSettings("profile"))}
+          >
             <Icon name="gear" size={20} />
             <span className="rail__label">Settings</span>
           </Link>
@@ -63,7 +84,7 @@ export default function Header() {
               <span className="rail__label">Log out</span>
             </button>
           ) : (
-            <Link href="/settings#account" className="rail__item" title="Sign in">
+            <Link href="/settings#account" className="rail__item" title="Sign in" onClick={(e) => (e.preventDefault(), openSettings("profile"))}>
               <Icon name="user" size={20} />
               <span className="rail__label">Sign in</span>
             </Link>
@@ -72,11 +93,11 @@ export default function Header() {
       </aside>
 
       <header className={`topbar ${scrolled ? "topbar--solid" : ""}`}>
-        <Link href="/" className="logo topbar__logo">
-          Anime<span>Stream</span>
+        <Link href="/" className="topbar__logo" aria-label="Mayoi home">
+          <Logo />
         </Link>
         <form className="search" onSubmit={submit} role="search">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search anime…" aria-label="Search anime" />
+          <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search anime…" aria-label="Search anime" />
           <button type="submit" aria-label="Search">
             <Icon name="search" size={17} />
           </button>

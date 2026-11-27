@@ -27,6 +27,7 @@ import {
   type SavedAnime,
 } from "@/lib/storage";
 import { useAccount } from "@/lib/sync";
+import { openSettings } from "@/lib/settings-modal";
 
 type Entry = ListEntry & { favorite: boolean };
 type View = "ALL" | "FAVORITES" | "HISTORY" | ListStatus | `custom:${string}`;
@@ -196,7 +197,7 @@ export default function LibraryPage() {
               : user === null
                 ? (
                   <>
-                    Saved in this browser only · <Link href="/settings#account">Sign in to sync</Link>
+                    Saved in this browser only · <Link href="/settings#account" onClick={(e) => (e.preventDefault(), openSettings("profile"))}>Sign in to sync</Link>
                   </>
                 )
                 : null}
@@ -303,7 +304,7 @@ export default function LibraryPage() {
               </button>
             </form>
           </nav>
-          <Link href="/settings#import" className="lside__import">
+          <Link href="/settings#anilist" className="lside__import" onClick={(e) => (e.preventDefault(), openSettings("connections"))}>
             Import from AniList / MAL
           </Link>
         </aside>
@@ -328,7 +329,7 @@ export default function LibraryPage() {
               {entries.length === 0 ? (
                 <>
                   Your list is empty. <Link href="/search">Find something to watch</Link> or{" "}
-                  <Link href="/settings#import">import from AniList / MAL</Link>.
+                  <Link href="/settings#anilist" onClick={(e) => (e.preventDefault(), openSettings("connections"))}>import from AniList / MAL</Link>.
                 </>
               ) : (
                 "Nothing matches."

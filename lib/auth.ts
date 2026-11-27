@@ -51,6 +51,17 @@ export async function checkPassword(name: string, password: string): Promise<boo
   return !!user && timingSafeEqual(hash, Buffer.from(user.hash, "hex"));
 }
 
+/** Set a new password after checking the current one. Returns an error message or null. */
+export async function changePassword(name: string, current: string, next: string): Promise<string | null> {
+  if (!(await checkPassword(name, current))) return "Your current password is wrong.";
+  const user = await dbGet<UserRecord>(`user:${name}`);
+  if (!user) return "Account not found.";
+  const salt = randomBytes(16).toString("hex");
+  const hash = (await scrypt(next, salt, 64)).toString("hex");
+  await dbSet(`user:${name}`, { ...user, salt, hash } satisfies UserRecord);
+  return null;
+}
+
 async function sign(value: string) {
   return createHmac("sha256", await secret()).update(value).digest("base64url");
 }

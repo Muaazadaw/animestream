@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNotifications } from "@/lib/notifications";
 import { getProfile, STORAGE_EVENT, type Profile } from "@/lib/storage";
 import { logout, useAccount } from "@/lib/sync";
+import { openSettings } from "@/lib/settings-modal";
 import { Icon } from "./Menu";
 
 export function useProfile() {
@@ -178,7 +179,7 @@ export default function AccountMenu() {
                 <Icon name="user" size={16} />
                 <span>{name}</span>
               </Link>
-              <Link href="/settings" className="acct__gear" onClick={() => setOpen(false)} aria-label="Settings">
+              <Link href="/settings" className="acct__gear" onClick={(e) => (e.preventDefault(), setOpen(false), openSettings("profile"))} aria-label="Settings">
                 <Icon name="gear" size={18} />
               </Link>
             </div>
@@ -187,7 +188,7 @@ export default function AccountMenu() {
                 <Icon name="power" size={16} /> Logout
               </button>
             ) : (
-              <Link href="/settings#account" className="acct__login" onClick={() => setOpen(false)}>
+              <Link href="/settings#account" className="acct__login" onClick={(e) => (e.preventDefault(), setOpen(false), openSettings("profile"))}>
                 <Icon name="user" size={16} /> Sign in to sync
               </Link>
             )}
