@@ -71,7 +71,7 @@ export default async function AnimePage({ params }: Props) {
           {m.title.native ? <div className="detail__native">{m.title.native}</div> : null}
           <div className="hero__genres">
             {m.genres.map((g) => (
-              <Link key={g} className="chip" href={`/search?genre=${encodeURIComponent(g)}`}>
+              <Link key={g} className="chip" href={`/search?genres=${encodeURIComponent(g)}`}>
                 {g}
               </Link>
             ))}

@@ -188,34 +188,114 @@ export async function getSeasonal(season: string, year: number, page = 1) {
 
 export type SearchParams = {
   search?: string;
-  genre?: string;
-  format?: string;
+  genres?: string[];
+  tags?: string[];
+  formats?: string[];
   status?: string;
+  year?: number;
+  season?: string;
+  source?: string;
+  country?: string;
+  /** Minimum average score, 0–100. */
+  minScore?: number;
   sort?: string;
   page?: number;
 };
 
+export const SEARCH_PER_PAGE = 28;
+
+/** The search filters kept in the URL (besides q / type / page). */
+export const SEARCH_FILTER_KEYS = ["genres", "tags", "formats", "status", "year", "sort", "source", "country", "score", "season"];
+
 export async function searchAnime(p: SearchParams) {
   const sort = p.sort || (p.search ? "SEARCH_MATCH" : "POPULARITY_DESC");
   const data = await query<{ Page: { pageInfo: { hasNextPage: boolean; currentPage: number }; media: MediaCard[] } }>(
-    `query ($search: String, $genre: String, $format: MediaFormat, $status: MediaStatus, $sort: [MediaSort], $page: Int) {
-      Page(page: $page, perPage: 30) {
+    `query ($search: String, $genres: [String], $tags: [String], $formats: [MediaFormat], $status: MediaStatus,
+            $year: Int, $season: MediaSeason, $source: MediaSource, $country: CountryCode, $minScore: Int,
+            $sort: [MediaSort], $page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
         pageInfo { hasNextPage currentPage }
-        media(type: ANIME, search: $search, genre: $genre, format: $format, status: $status, sort: $sort, isAdult: false) { ${CARD_FIELDS} }
+        media(type: ANIME, search: $search, genre_in: $genres, tag_in: $tags, format_in: $formats, status: $status,
+              seasonYear: $year, season: $season, source: $source, countryOfOrigin: $country,
+              averageScore_greater: $minScore, sort: $sort, isAdult: false) { ${CARD_FIELDS} }
       }
     }`,
     {
       search: p.search || undefined,
-      genre: p.genre || undefined,
-      format: p.format || undefined,
+      genres: p.genres?.length ? p.genres : undefined,
+      tags: p.tags?.length ? p.tags : undefined,
+      formats: p.formats?.length ? p.formats : undefined,
       status: p.status || undefined,
+      year: p.year || undefined,
+      season: p.season || undefined,
+      source: p.source || undefined,
+      country: p.country || undefined,
+      minScore: p.minScore || undefined,
       sort: [sort],
       page: p.page || 1,
+      perPage: SEARCH_PER_PAGE,
     },
     600,
   );
   return data.Page;
 }
+
+export type PersonCard = { id: number; name: string; native: string | null; image: string | null; favourites: number; sub: string | null };
+
+/** Characters or staff by name (or the most favourited when there's no search). */
+export async function searchPeople(kind: "characters" | "staff", search: string | undefined, page = 1) {
+  const sort = search ? "[SEARCH_MATCH, FAVOURITES_DESC]" : "[FAVOURITES_DESC]";
+  const fields =
+    kind === "characters"
+      ? `characters(search: $search, sort: ${sort}) { id name { full native } image { large } favourites media(perPage: 1, sort: POPULARITY_DESC) { nodes { title { romaji english native userPreferred } } } }`
+      : `staff(search: $search, sort: ${sort}) { id name { full native } image { large } favourites primaryOccupations }`;
+  type Raw = {
+    id: number;
+    name: { full: string; native: string | null };
+    image: { large: string | null };
+    favourites: number;
+    media?: { nodes: { title: MediaTitle }[] };
+    primaryOccupations?: string[];
+  };
+  const data = await query<{ Page: { pageInfo: { hasNextPage: boolean }; characters?: Raw[]; staff?: Raw[] } }>(
+    `query ($search: String, $page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) { pageInfo { hasNextPage } ${fields} }
+    }`,
+    { search: search || undefined, page, perPage: SEARCH_PER_PAGE },
+    3600,
+  );
+  const people: PersonCard[] = (data.Page[kind] ?? []).map((r) => ({
+    id: r.id,
+    name: r.name.full,
+    native: r.name.native,
+    image: r.image.large,
+    favourites: r.favourites,
+    sub: r.media?.nodes[0] ? titleOf(r.media.nodes[0].title) : (r.primaryOccupations?.[0] ?? null),
+  }));
+  return { pageInfo: data.Page.pageInfo, people };
+}
+
+/** AniList's tag list (non-adult), for the search filters. */
+export async function getTags(): Promise<{ name: string; category: string }[]> {
+  const data = await query<{ MediaTagCollection: { name: string; category: string; isAdult: boolean }[] }>(
+    `query { MediaTagCollection { name category isAdult } }`,
+    {},
+    86400,
+  );
+  return data.MediaTagCollection.filter((t) => !t.isAdult)
+    .map(({ name, category }) => ({ name, category }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export const SOURCES = [
+  "ORIGINAL", "MANGA", "LIGHT_NOVEL", "VISUAL_NOVEL", "VIDEO_GAME", "NOVEL", "WEB_NOVEL", "DOUJINSHI", "ANIME", "OTHER",
+];
+export const COUNTRIES: [string, string][] = [
+  ["JP", "Japan"],
+  ["KR", "South Korea"],
+  ["CN", "China"],
+  ["TW", "Taiwan"],
+];
 
 export async function getAnime(id: number): Promise<MediaDetail | null> {
   const data = await query<{ Media: MediaDetail | null }>(
