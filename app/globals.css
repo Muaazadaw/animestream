@@ -1553,3 +1553,121 @@ body:has(.reader) .footer { display: none; }
 /* Reader: no page scrollbar (scrolling still works with the wheel, keys and touch) */
 html:has(.reader) { scrollbar-width: none; }
 html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { display: none; }
+
+/* Reader: pages, sizing, colour */
+.reader__strip { display: flex; flex-direction: column; align-items: center; width: 100%; gap: var(--page-gap, 0px); }
+.reader__strip img { display: block; max-width: min(100%, 760px); height: auto; min-height: 300px; background: #0d0d12; }
+.fit-w .reader__strip img { max-width: 100%; }
+.fit-w.limit-w .reader__strip img { max-width: min(100%, 1000px); }
+.stretch .reader__strip img { width: min(100%, 760px); }
+.stretch.fit-w .reader__strip img { width: 100%; }
+.stretch.fit-w.limit-w .reader__strip img { width: min(100%, 1000px); }
+.fit-h .reader__strip img { max-height: 100vh; max-height: 100dvh; width: auto; min-height: 0; }
+.fit-h.limit-h .reader__strip img { max-height: calc(100dvh - 120px); }
+.stretch.fit-h .reader__strip img { height: 100dvh; }
+.stretch.fit-h.limit-h .reader__strip img { height: calc(100dvh - 120px); }
+.reader__page { gap: var(--page-gap, 0px); align-items: center; }
+.reader--double .reader__page img:not(.reader__preload) { max-width: calc(50% - var(--page-gap, 0px) / 2); }
+.stretch .reader__page img:not(.reader__preload) { height: 100%; width: auto; }
+.fit-w:not(.fit-h) .reader__page { height: auto; }
+.fit-w:not(.fit-h) .reader__page img:not(.reader__preload) { max-height: none; width: 100%; }
+.reader--double.fit-w:not(.fit-h) .reader__page img:not(.reader__preload) { width: calc(50% - var(--page-gap, 0px) / 2); }
+.gray .reader__strip img, .gray .reader__page img { filter: grayscale(1); }
+.reader__dim { position: fixed; inset: 0; z-index: 35; background: #000; pointer-events: none; }
+
+/* Reader: page progress bar */
+.reader__progress { position: fixed; z-index: 38; display: flex; gap: 2px; padding: 4px; opacity: 0.55; transition: opacity 0.2s; }
+.reader__progress:hover { opacity: 1; }
+.reader__progress button { flex: 1; min-width: 2px; min-height: 2px; border: 0; padding: 0; border-radius: 2px; background: rgba(255, 255, 255, 0.16); cursor: pointer; }
+.reader__progress button:hover { background: rgba(255, 255, 255, 0.45); }
+.reader__progress button.is-done { background: var(--accent); }
+.reader__progress--left, .reader__progress--right { top: 18%; bottom: 18%; width: 12px; flex-direction: column; }
+.reader__progress--left { left: 4px; }
+.reader__progress--right { right: 4px; }
+.reader__progress--top, .reader__progress--bottom { left: 22%; right: 22%; height: 10px; }
+.reader__progress--top { top: 0; }
+.reader__progress--bottom { bottom: var(--safe-bottom); }
+.reader:has(.reader__progress--right) .reader__tools { right: 24px; }
+
+/* Reader: chapter pill sits at the top on bigger screens */
+@media (min-width: 761px) {
+  .reader__pill { top: calc(10px + var(--safe-top)); bottom: auto; }
+  .reader.is-hidden .reader__pill { transform: translate(-50%, -160%); }
+}
+
+/* Reader: panels (chapters, settings, help) */
+.rpanel {
+  position: fixed; right: 70px; top: 50%; transform: translateY(-50%); z-index: 45; width: min(420px, calc(100vw - 90px));
+  max-height: min(660px, 86vh); display: flex; flex-direction: column; gap: 10px; padding: 16px 18px 18px; border-radius: 16px;
+  background: rgba(24, 24, 33, 0.98); border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  animation: rpanel-in 0.18s ease;
+}
+@keyframes rpanel-in { from { opacity: 0; transform: translateY(calc(-50% + 8px)); } }
+.rpanel__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rpanel__head > strong { font-size: 17px; }
+.rpanel__close { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.rpanel__close:hover { background: var(--bg-3); color: var(--text); }
+.rpanel__tabs { display: flex; gap: 4px; }
+.rpanel__tabs button { padding: 7px 16px; border-radius: 8px; border: 0; background: none; color: var(--muted); font-weight: 700; font-size: 14px; cursor: pointer; }
+.rpanel__tabs button.is-active { background: color-mix(in srgb, var(--accent-2) 28%, transparent); color: #fff; }
+.rpanel__body { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; scrollbar-width: thin; margin: 0 -4px; padding: 0 4px; }
+.rpanel__body h4 { margin: 10px 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.rpanel__row { display: flex; justify-content: space-between; align-items: flex-end; }
+.rpanel__val { font-size: 13px; font-weight: 700; color: var(--accent); }
+.rpanel__note { font-size: 12px; margin: 8px 0 0; }
+.rtiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.rtiles--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rtiles--five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.rtiles button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 10px 6px;
+  border-radius: 10px; border: 1px solid transparent; background: var(--bg-3); color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.rtiles:not(.rtiles--two):not(.rtiles--five) button { min-height: 76px; }
+.rtiles button:hover { color: var(--text); }
+.rtiles button.is-active { background: color-mix(in srgb, var(--accent-2) 26%, var(--bg-3)); border-color: color-mix(in srgb, var(--accent-2) 60%, transparent); color: #fff; }
+.rbar { position: relative; display: block; width: 20px; height: 15px; border: 1.5px solid currentColor; border-radius: 3px; }
+.rbar::after { content: ""; position: absolute; background: currentColor; }
+.rbar--left::after { left: 2px; top: 2px; bottom: 2px; width: 4px; }
+.rbar--right::after { right: 2px; top: 2px; bottom: 2px; width: 4px; }
+.rbar--top::after { top: 2px; left: 2px; right: 2px; height: 3px; }
+.rbar--bottom::after { bottom: 2px; left: 2px; right: 2px; height: 3px; }
+.rstep { display: flex; gap: 8px; }
+.rstep__box { flex: 1; display: flex; align-items: center; justify-content: space-between; height: 42px; padding: 0 6px; border-radius: 10px; background: var(--bg-3); }
+.rstep__box span { font-weight: 700; font-size: 14px; }
+.rstep__box button { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; border: 0; background: none; color: var(--text); cursor: pointer; }
+.rstep__box button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
+.rstep button:disabled { opacity: 0.35; cursor: default; }
+.rstep__reset { padding: 0 16px; border-radius: 10px; border: 0; background: color-mix(in srgb, var(--accent-2) 22%, var(--bg-3)); color: #d9ccff; font-weight: 700; font-size: 13px; cursor: pointer; }
+.rcheck { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px; background: var(--bg-3); font-size: 14px; font-weight: 600; cursor: pointer; }
+.rcheck input { width: 16px; height: 16px; accent-color: var(--accent-2); }
+.rcheck.is-disabled { opacity: 0.4; cursor: default; }
+.rrange { width: 100%; accent-color: var(--accent-2); }
+.rpanel__search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; background: var(--bg-3); color: var(--muted); }
+.rpanel__search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); font-size: 14px; }
+.rpanel__seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 10px; background: var(--bg-3); }
+.rpanel__seg button { padding: 8px; border-radius: 8px; border: 0; background: none; color: var(--muted); font-weight: 700; font-size: 13px; cursor: pointer; }
+.rpanel__seg button.is-active { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+.rpanel__list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 120px; margin: 0 -8px; padding: 0 8px; scrollbar-width: thin; }
+.rpanel__empty { padding: 16px 4px; font-size: 14px; }
+.rchap { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; font-size: 14px; }
+.rchap:hover { background: var(--bg-3); color: var(--text); }
+.rchap.is-active { background: color-mix(in srgb, var(--accent-2) 24%, transparent); color: #fff; }
+.rchap__num { font-weight: 700; white-space: nowrap; }
+.rchap.is-active .rchap__num { color: #d9ccff; }
+.rchap__read { display: grid; place-items: center; width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%; background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+.rchap__title { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rchap__when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.rpanel__pages { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; }
+.rpanel__pages button { min-width: 34px; height: 34px; padding: 0 6px; border-radius: 8px; border: 0; background: none; color: var(--muted); font-weight: 700; font-size: 14px; cursor: pointer; }
+.rpanel__pages button:hover:not(:disabled) { background: var(--bg-3); color: var(--text); }
+.rpanel__pages button.is-active { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+.rpanel__pages button:disabled { opacity: 0.3; cursor: default; }
+.rkey { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.rkey kbd { min-width: 96px; padding: 5px 8px; border-radius: 6px; background: var(--bg-3); border: 1px solid var(--line); font: 700 12px ui-monospace, monospace; text-align: center; }
+@media (max-width: 760px) {
+  .rpanel { left: 10px; right: 10px; width: auto; top: auto; bottom: calc(70px + var(--safe-bottom)); transform: none; max-height: 72vh; animation-name: rpanel-up; }
+  @keyframes rpanel-up { from { opacity: 0; transform: translateY(8px); } }
+  .reader__progress--left, .reader__progress--right { width: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .rpanel { animation: none; } }

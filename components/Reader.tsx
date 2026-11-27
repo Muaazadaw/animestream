@@ -2,27 +2,40 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { getReaderPrefs, saveReaderPrefs, useChapters, type ReaderPrefs } from "@/lib/manga/client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_READER_PREFS, getReaderPrefs, saveReaderPrefs, useChapters, type Chapter, type ReaderPrefs } from "@/lib/manga/client";
 import { getLists, markChapterRead, type SavedAnime } from "@/lib/storage";
 import { Icon } from "./Menu";
 
-type Pages = { pages: string[]; saver: string[]; number: string | null; group: string | null };
+type Pages = { pages: string[]; saver?: string[]; number: string | null; group?: string | null };
+type Panel = "chapters" | "settings" | "help" | null;
 
-/** Full-screen chapter reader: long strip or page by page, with a chapter pill and side toolbar. */
+const CHAPTERS_PER_PAGE = 50;
+
+function ago(iso: string | null) {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  if (s < 86400 * 30) return `${Math.round(s / 86400)}d ago`;
+  if (s < 86400 * 365) return `${Math.round(s / (86400 * 30))}mo ago`;
+  return `${Math.round(s / (86400 * 365))}y ago`;
+}
+
+/** Full-screen chapter reader: single page, double page or long strip, with a chapter pill and side toolbar. */
 export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapterId: string }) {
   const router = useRouter();
   const { chapters } = useChapters(manga.id);
   const [data, setData] = useState<Pages | null>(null);
   const [failed, setFailed] = useState(false);
-  const [prefs, setPrefsState] = useState<ReaderPrefs>({ mode: "vertical", saver: false, fit: "comfy", gap: false });
-  const [panel, setPanel] = useState<"chapters" | "settings" | null>(null);
+  const [prefs, setPrefsState] = useState<ReaderPrefs>(DEFAULT_READER_PREFS);
+  const [panel, setPanel] = useState<Panel>(null);
   const [page, setPage] = useState(0);
   const [chrome, setChrome] = useState(true);
+  const [progress, setProgress] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
   const marked = useRef(false);
 
-  const [progress, setProgress] = useState(0);
   useEffect(() => setPrefsState(getReaderPrefs()), []);
   useEffect(() => setProgress(getLists()[manga.id]?.progress ?? 0), [manga.id, chapterId]);
   const setPrefs = (p: Partial<ReaderPrefs>) => {
@@ -59,8 +72,28 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   const next = index >= 0 && index < list.length - 1 ? list[index + 1] : null;
   const go = (c: { id: string } | null) => c && router.push(`/manga/${manga.id}/read/${c.id}`);
 
-  const images = data ? (prefs.saver ? data.saver : data.pages) : [];
-  const paged = prefs.mode === "paged";
+  const images = data ? (prefs.saver && data.saver?.length ? data.saver : data.pages) : [];
+  const strip = prefs.mode === "vertical";
+  const step = prefs.mode === "double" ? 2 : 1;
+  const lastPage = Math.max(0, images.length - 1);
+
+  // Which page you're looking at in the strip (for the progress bar).
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [seen, setSeen] = useState(0);
+  useEffect(() => {
+    if (!strip) return;
+    const onScroll = () => {
+      const imgs = stripRef.current?.querySelectorAll("img");
+      if (!imgs?.length) return;
+      let i = 0;
+      imgs.forEach((img, n) => img.getBoundingClientRect().top < window.innerHeight / 2 && (i = n));
+      setSeen(i);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [strip, data]);
+  const at = strip ? seen : page;
 
   // Reaching the end of the chapter counts it as read.
   const markRead = () => {
@@ -69,7 +102,7 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
     markChapterRead({ ...manga, chapters: manga.chapters }, parseFloat(number));
   };
   useEffect(() => {
-    if (paged || !data || !endRef.current) return;
+    if (!strip || !data || !endRef.current) return;
     const io = new IntersectionObserver((e) => e[0]?.isIntersecting && markRead(), { rootMargin: "200px" });
     io.observe(endRef.current);
     // Backup for browsers that skip the observer: near the bottom counts too.
@@ -80,24 +113,36 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
       window.removeEventListener("scroll", onScroll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paged, data, number]);
+  }, [strip, data, number]);
   useEffect(() => {
-    if (paged && images.length && page === images.length - 1) markRead();
+    if (!strip && images.length && page + step > lastPage) markRead();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paged, page, images.length]);
+  }, [strip, page, images.length]);
 
-  // Keyboard: ←/→ turn pages (or chapters in the strip), Esc closes panels.
+  const turn = (dir: 1 | -1) => {
+    if (dir > 0) page + step <= lastPage ? setPage(page + step) : go(next);
+    else page > 0 ? setPage(Math.max(0, page - step)) : go(prev);
+  };
+  const jumpTo = (i: number) => {
+    if (strip) stripRef.current?.querySelectorAll("img")[i]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    else setPage(prefs.mode === "double" ? i - (i % 2) : i);
+  };
+
+  // Keyboard: ← → pages (or chapters in the strip), ↑ ↓ / Space scroll the strip, Esc closes panels.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "SELECT")) return;
-      if (e.key === "Escape") setPanel(null);
-      else if (e.key === "ArrowRight" || e.key === "d") {
-        if (paged && page < images.length - 1) setPage(page + 1);
-        else go(next);
-      } else if (e.key === "ArrowLeft" || e.key === "a") {
-        if (paged && page > 0) setPage(page - 1);
-        else if (!paged || page === 0) go(prev);
+      if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+      if (e.key === "Escape") return setPanel(null);
+      if (e.key === "ArrowRight" || e.key === "d") return strip ? go(next) : turn(1);
+      if (e.key === "ArrowLeft" || e.key === "a") return strip ? go(prev) : turn(-1);
+      if (e.key === "f") return fullscreen();
+      if (e.key === "c") return setPanel((p) => (p === "chapters" ? null : "chapters"));
+      if (e.key === "s") return setPanel((p) => (p === "settings" ? null : "settings"));
+      if (strip && (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === " ")) {
+        e.preventDefault();
+        const dir = e.key === "ArrowUp" || (e.key === " " && e.shiftKey) ? -1 : 1;
+        window.scrollBy({ top: (dir * window.innerHeight * prefs.scrollAmount) / 100, behavior: prefs.keyScroll === "smooth" ? "smooth" : "auto" });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -121,22 +166,29 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   // Fullscreen isn't available on iPhone, so the button only shows where it works.
   const [canFullscreen, setCanFullscreen] = useState(false);
   useEffect(() => setCanFullscreen(!!document.fullscreenEnabled), []);
-
-  // Paged mode on phones: swipe left for the next page, right for the previous one.
-  const touch = useRef<{ x: number; y: number } | null>(null);
-  const turn = (dir: 1 | -1) => {
-    if (dir > 0) page < images.length - 1 ? setPage(page + 1) : go(next);
-    else page > 0 ? setPage(page - 1) : go(prev);
-  };
-
-  const fullscreen = () => {
+  function fullscreen() {
     if (document.fullscreenElement) void document.exitFullscreen();
     else void document.documentElement.requestFullscreen?.().catch(() => {});
-  };
+  }
 
+  // Single / double page on phones: swipe left for the next page, right for the previous one.
+  const touch = useRef<{ x: number; y: number } | null>(null);
+
+  const toggle = (p: Panel) => setPanel(panel === p ? null : p);
+  const classes = [
+    "reader",
+    `reader--${prefs.mode}`,
+    prefs.fitWidth ? "fit-w" : "",
+    prefs.fitHeight ? "fit-h" : "",
+    prefs.stretch ? "stretch" : "",
+    prefs.fitWidth && prefs.limitWidth ? "limit-w" : "",
+    prefs.fitHeight && prefs.limitHeight ? "limit-h" : "",
+    prefs.grayscale ? "gray" : "",
+    chrome ? "" : "is-hidden",
+  ].join(" ");
 
   return (
-    <div className={`reader reader--${prefs.mode} reader--${prefs.fit} ${prefs.gap ? "reader--gap" : ""} ${chrome ? "" : "is-hidden"}`}>
+    <div className={classes} style={{ "--page-gap": `${prefs.margin}px` } as React.CSSProperties}>
       <header className="reader__top">
         <Link href={`/manga/${manga.id}`} className="reader__back" aria-label="Back to manga">
           <Icon name="prev" size={18} />
@@ -162,7 +214,14 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           <div className="reader__msg">
             <span className="spinner" />
           </div>
-        ) : paged ? (
+        ) : strip ? (
+          <div className="reader__strip" ref={stripRef}>
+            {images.map((src, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={src} src={src} alt={`Page ${i + 1}`} loading={i < 3 ? "eager" : "lazy"} referrerPolicy="no-referrer" />
+            ))}
+          </div>
+        ) : (
           <div
             className="reader__page"
             onClick={(e) => {
@@ -182,19 +241,16 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
               }
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={images[page]} alt={`Page ${page + 1}`} referrerPolicy="no-referrer" />
-            {/* Preload the next page. */}
-            {images[page + 1] ? (
+            {images.slice(page, page + step).map((src) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={images[page + 1]} alt="" referrerPolicy="no-referrer" className="reader__preload" />
-            ) : null}
+              <img key={src} src={src} alt={`Page ${page + 1}`} referrerPolicy="no-referrer" />
+            ))}
+            {/* Preload what comes next. */}
+            {images.slice(page + step, page + step * 2).map((src) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={`pre-${src}`} src={src} alt="" referrerPolicy="no-referrer" className="reader__preload" />
+            ))}
           </div>
-        ) : (
-          images.map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={src} src={src} alt={`Page ${i + 1}`} loading={i < 3 ? "eager" : "lazy"} referrerPolicy="no-referrer" />
-          ))
         )}
 
         {data ? (
@@ -220,15 +276,33 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
         ) : null}
       </main>
 
+      {/* Darken the pages (under the controls) */}
+      {prefs.dim > 0 ? <div className="reader__dim" style={{ opacity: prefs.dim / 100 }} /> : null}
+
+      {/* Page progress: one segment per page, click to jump */}
+      {prefs.progressBar !== "none" && images.length > 1 ? (
+        <div className={`reader__progress reader__progress--${prefs.progressBar}`}>
+          {images.map((_, i) => (
+            <button
+              key={i}
+              className={i <= at + (strip ? 0 : step - 1) ? "is-done" : ""}
+              onClick={() => jumpTo(i)}
+              aria-label={`Page ${i + 1}`}
+              title={`Page ${i + 1}`}
+            />
+          ))}
+        </div>
+      ) : null}
+
       {/* Chapter pill */}
       <div className="reader__pill">
         <button disabled={!prev} onClick={() => go(prev)} aria-label="Previous chapter">
           <Icon name="prev" size={16} />
         </button>
-        <button className="reader__pillmid" onClick={() => setPanel(panel === "chapters" ? null : "chapters")}>
+        <button className="reader__pillmid" onClick={() => toggle("chapters")}>
           Ch. {number}
           {list.length ? ` / ${list[list.length - 1].number}` : ""}
-          {paged && images.length ? <em> · {page + 1}/{images.length}</em> : null}
+          {!strip && images.length ? <em> · {page + 1}/{images.length}</em> : null}
         </button>
         <button disabled={!next} onClick={() => go(next)} aria-label="Next chapter">
           <Icon name="next" size={16} />
@@ -241,90 +315,347 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           <Icon name="home" size={18} />
         </Link>
         <Link href={`/manga/${manga.id}`} title="Manga info" aria-label="Manga info">
-          <Icon name="info" size={18} />
+          <Icon name="book" size={18} />
         </Link>
-        <button title="Chapters" aria-label="Chapters" className={panel === "chapters" ? "is-active" : ""} onClick={() => setPanel(panel === "chapters" ? null : "chapters")}>
+        <button title="Chapters (C)" aria-label="Chapters" className={panel === "chapters" ? "is-active" : ""} onClick={() => toggle("chapters")}>
           <Icon name="list" size={18} />
         </button>
-        <button title="Reader settings" aria-label="Reader settings" className={panel === "settings" ? "is-active" : ""} onClick={() => setPanel(panel === "settings" ? null : "settings")}>
+        <button title="Settings (S)" aria-label="Reader settings" className={panel === "settings" ? "is-active" : ""} onClick={() => toggle("settings")}>
           <Icon name="gear" size={18} />
         </button>
         <button
-          title={paged ? "Long strip" : "Page by page"}
-          aria-label={paged ? "Switch to long strip" : "Switch to page by page"}
-          onClick={() => setPrefs({ mode: paged ? "vertical" : "paged" })}
+          title={`Layout: ${prefs.mode === "vertical" ? "Long strip" : prefs.mode === "double" ? "Double" : "Single"}`}
+          aria-label="Change layout"
+          onClick={() => setPrefs({ mode: prefs.mode === "single" ? "double" : prefs.mode === "double" ? "vertical" : "single" })}
         >
-          <Icon name={paged ? "layers" : "image"} size={18} />
+          <Icon name={prefs.mode === "vertical" ? "strip" : prefs.mode} size={18} />
         </button>
         {canFullscreen ? (
-          <button title="Fullscreen" aria-label="Fullscreen" onClick={fullscreen}>
-            <Icon name="monitor" size={18} />
+          <button title="Fullscreen (F)" aria-label="Fullscreen" onClick={fullscreen}>
+            <Icon name="expand" size={18} />
           </button>
         ) : null}
+        <button title="Help" aria-label="Help" className={panel === "help" ? "is-active" : ""} onClick={() => toggle("help")}>
+          <Icon name="help" size={18} />
+        </button>
       </nav>
 
       {panel === "chapters" ? (
-        <aside className="reader__panel">
-          <div className="reader__panelhead">
-            <strong>Chapters</strong>
-            <button onClick={() => setPanel(null)} aria-label="Close">
-              <Icon name="close" size={16} />
+        <ChapterPanel
+          mangaId={manga.id}
+          chapters={list}
+          currentId={current?.id ?? null}
+          progress={progress}
+          onClose={() => setPanel(null)}
+        />
+      ) : null}
+      {panel === "settings" ? <SettingsPanel prefs={prefs} setPrefs={setPrefs} onClose={() => setPanel(null)} /> : null}
+      {panel === "help" ? <HelpPanel onClose={() => setPanel(null)} /> : null}
+    </div>
+  );
+}
+
+function PanelHead({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="rpanel__head">
+      {children}
+      <button className="rpanel__close" onClick={onClose} aria-label="Close">
+        <Icon name="close" size={16} />
+      </button>
+    </div>
+  );
+}
+
+/** Chapter list: search, sort by chapter or date, pages of 50 with numbers. */
+function ChapterPanel({
+  mangaId,
+  chapters,
+  currentId,
+  progress,
+  onClose,
+}: {
+  mangaId: number;
+  chapters: Chapter[];
+  currentId: string | null;
+  progress: number;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<"desc" | "asc" | "date">("desc");
+  const shown = useMemo(() => {
+    let list = [...chapters];
+    if (sort === "desc") list.reverse();
+    if (sort === "date") list.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+    const term = q.trim().toLowerCase();
+    if (term) list = list.filter((c) => c.number.startsWith(term) || c.title?.toLowerCase().includes(term));
+    return list;
+  }, [chapters, sort, q]);
+  const pages = Math.max(1, Math.ceil(shown.length / CHAPTERS_PER_PAGE));
+
+  // Open on the page with the chapter you're reading.
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    const i = shown.findIndex((c) => c.id === currentId);
+    setPage(!q && i > 0 ? Math.floor(i / CHAPTERS_PER_PAGE) : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sort, q]);
+  const cur = Math.min(page, pages - 1);
+  const visible = shown.slice(cur * CHAPTERS_PER_PAGE, (cur + 1) * CHAPTERS_PER_PAGE);
+
+  // Page numbers around the current one, like « ‹ 9 10 11 12 13 › ».
+  const nums = Array.from({ length: pages }, (_, i) => i).filter((i) => Math.abs(i - cur) <= 2 || (cur < 2 && i < 5) || (cur > pages - 3 && i >= pages - 5));
+
+  return (
+    <aside className="rpanel rpanel--chapters">
+      <PanelHead onClose={onClose}>
+        <strong>Chapters</strong>
+      </PanelHead>
+      <label className="rpanel__search">
+        <Icon name="search" size={15} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Chapter number or title" autoFocus />
+      </label>
+      <div className="rpanel__seg">
+        <button className={sort !== "date" ? "is-active" : ""} onClick={() => setSort(sort === "desc" ? "asc" : "desc")}>
+          Chapter {sort === "asc" ? "↑" : "↓"}
+        </button>
+        <button className={sort === "date" ? "is-active" : ""} onClick={() => setSort("date")}>
+          Date
+        </button>
+      </div>
+      <div className="rpanel__list">
+        {visible.length === 0 ? <p className="muted rpanel__empty">No chapter matches.</p> : null}
+        {visible.map((c) => {
+          const active = c.id === currentId;
+          const read = parseFloat(c.number) <= progress;
+          return (
+            <Link
+              key={c.id}
+              href={`/manga/${mangaId}/read/${c.id}`}
+              className={`rchap ${active ? "is-active" : ""}`}
+              onClick={onClose}
+              ref={active ? (el) => el?.scrollIntoView({ block: "center" }) : undefined}
+            >
+              <span className="rchap__num">Ch. {c.number}</span>
+              {read ? (
+                <span className="rchap__read" title="Read">
+                  <Icon name="check" size={12} />
+                </span>
+              ) : null}
+              <span className="rchap__title">{c.title ?? ""}</span>
+              <span className="rchap__when">{ago(c.publishedAt)}</span>
+            </Link>
+          );
+        })}
+      </div>
+      {pages > 1 ? (
+        <div className="rpanel__pages">
+          <button disabled={cur === 0} onClick={() => setPage(0)} aria-label="First page">
+            «
+          </button>
+          <button disabled={cur === 0} onClick={() => setPage(cur - 1)} aria-label="Previous page">
+            ‹
+          </button>
+          {nums.map((i) => (
+            <button key={i} className={i === cur ? "is-active" : ""} onClick={() => setPage(i)}>
+              {i + 1}
             </button>
-          </div>
-          <div className="reader__chapters">
-            {[...list].reverse().map((c) => (
-              <Link
-                key={c.id}
-                href={`/manga/${manga.id}/read/${c.id}`}
-                className={`${c.id === current?.id ? "is-active" : ""} ${parseFloat(c.number) <= progress ? "is-read" : ""}`}
-                onClick={() => setPanel(null)}
-                ref={c.id === current?.id ? (el) => el?.scrollIntoView({ block: "center" }) : undefined}
-              >
-                <span>Chapter {c.number}</span>
-                {c.title ? <em>{c.title}</em> : null}
-              </Link>
+          ))}
+          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)} aria-label="Next page">
+            ›
+          </button>
+          <button disabled={cur >= pages - 1} onClick={() => setPage(pages - 1)} aria-label="Last page">
+            »
+          </button>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function Stepper({ value, onChange, min, max, step, unit, reset }: {
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  reset: number;
+}) {
+  return (
+    <div className="rstep">
+      <div className="rstep__box">
+        <button onClick={() => onChange(Math.max(min, value - step))} disabled={value <= min} aria-label="Less">
+          <Icon name="minus" size={14} />
+        </button>
+        <span>
+          {value}
+          {unit}
+        </span>
+        <button onClick={() => onChange(Math.min(max, value + step))} disabled={value >= max} aria-label="More">
+          <Icon name="plus" size={14} />
+        </button>
+      </div>
+      <button className="rstep__reset" onClick={() => onChange(reset)} disabled={value === reset}>
+        Reset
+      </button>
+    </div>
+  );
+}
+
+function Check({ checked, disabled, onChange, children }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void; children: React.ReactNode }) {
+  return (
+    <label className={`rcheck ${disabled ? "is-disabled" : ""}`}>
+      <input type="checkbox" checked={checked && !disabled} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span>{children}</span>
+    </label>
+  );
+}
+
+/** Reader settings, in two tabs like the layout / image split most readers use. */
+function SettingsPanel({ prefs, setPrefs, onClose }: { prefs: ReaderPrefs; setPrefs: (p: Partial<ReaderPrefs>) => void; onClose: () => void }) {
+  const [tab, setTab] = useState<"layout" | "image">("layout");
+  const d = DEFAULT_READER_PREFS;
+  return (
+    <aside className="rpanel rpanel--settings">
+      <PanelHead onClose={onClose}>
+        <div className="rpanel__tabs">
+          <button className={tab === "layout" ? "is-active" : ""} onClick={() => setTab("layout")}>
+            Layout
+          </button>
+          <button className={tab === "image" ? "is-active" : ""} onClick={() => setTab("image")}>
+            Image
+          </button>
+        </div>
+      </PanelHead>
+
+      {tab === "layout" ? (
+        <div className="rpanel__body">
+          <h4>Layout</h4>
+          <div className="rtiles">
+            {(
+              [
+                ["single", "Single", "single"],
+                ["double", "Double", "double"],
+                ["vertical", "Long strip", "strip"],
+              ] as const
+            ).map(([mode, label, icon]) => (
+              <button key={mode} className={prefs.mode === mode ? "is-active" : ""} onClick={() => setPrefs({ mode })}>
+                <Icon name={icon} size={20} />
+                {label}
+              </button>
             ))}
           </div>
-        </aside>
-      ) : null}
 
-      {panel === "settings" ? (
-        <aside className="reader__panel">
-          <div className="reader__panelhead">
-            <strong>Reader settings</strong>
-            <button onClick={() => setPanel(null)} aria-label="Close">
-              <Icon name="close" size={16} />
+          <h4>Margin</h4>
+          <Stepper value={prefs.margin} onChange={(margin) => setPrefs({ margin })} min={0} max={60} step={5} unit="px" reset={d.margin} />
+
+          <h4>Keyboard scrolling</h4>
+          <div className="rtiles rtiles--two">
+            <button className={prefs.keyScroll === "fast" ? "is-active" : ""} onClick={() => setPrefs({ keyScroll: "fast" })}>
+              Scroll fast
+            </button>
+            <button className={prefs.keyScroll === "smooth" ? "is-active" : ""} onClick={() => setPrefs({ keyScroll: "smooth" })}>
+              Scroll smooth
             </button>
           </div>
-          <div className="reader__settings">
-            <label>Reading mode</label>
-            <div className="mtabs">
-              <button className={!paged ? "is-active" : ""} onClick={() => setPrefs({ mode: "vertical" })}>
-                Long strip
+
+          <h4>Scroll amount</h4>
+          <Stepper
+            value={prefs.scrollAmount}
+            onChange={(scrollAmount) => setPrefs({ scrollAmount })}
+            min={10}
+            max={100}
+            step={10}
+            unit="%"
+            reset={d.scrollAmount}
+          />
+
+          <h4>Progress bar</h4>
+          <div className="rtiles rtiles--five">
+            {(["left", "top", "right", "bottom", "none"] as const).map((pos) => (
+              <button
+                key={pos}
+                className={prefs.progressBar === pos ? "is-active" : ""}
+                onClick={() => setPrefs({ progressBar: pos })}
+                title={pos === "none" ? "Hidden" : `${pos[0].toUpperCase()}${pos.slice(1)}`}
+                aria-label={pos === "none" ? "No progress bar" : `Progress bar on the ${pos}`}
+              >
+                {pos === "none" ? <Icon name="close" size={16} /> : <span className={`rbar rbar--${pos}`} />}
               </button>
-              <button className={paged ? "is-active" : ""} onClick={() => setPrefs({ mode: "paged" })}>
-                Page by page
-              </button>
-            </div>
-            <label>Page width</label>
-            <div className="mtabs">
-              <button className={prefs.fit === "comfy" ? "is-active" : ""} onClick={() => setPrefs({ fit: "comfy" })}>
-                Comfortable
-              </button>
-              <button className={prefs.fit === "width" ? "is-active" : ""} onClick={() => setPrefs({ fit: "width" })}>
-                Full width
-              </button>
-            </div>
-            <label className="reader__check">
-              <input type="checkbox" checked={prefs.gap} onChange={(e) => setPrefs({ gap: e.target.checked })} /> Gap between pages
-            </label>
-            <label className="reader__check">
-              <input type="checkbox" checked={prefs.saver} onChange={(e) => setPrefs({ saver: e.target.checked })} /> Data saver (smaller images)
-            </label>
-            <p className="muted reader__keys">Tap or swipe to turn pages · Keys: ← → change page or chapter</p>
+            ))}
           </div>
-        </aside>
-      ) : null}
-    </div>
+        </div>
+      ) : (
+        <div className="rpanel__body">
+          <h4>Image sizing</h4>
+          <Check checked={prefs.fitWidth} onChange={(fitWidth) => setPrefs({ fitWidth })}>
+            Fit width
+          </Check>
+          <Check checked={prefs.fitHeight} onChange={(fitHeight) => setPrefs({ fitHeight })}>
+            Fit height
+          </Check>
+          <Check checked={prefs.stretch} onChange={(stretch) => setPrefs({ stretch })}>
+            Stretch small images
+          </Check>
+          <Check checked={prefs.limitWidth} disabled={!prefs.fitWidth} onChange={(limitWidth) => setPrefs({ limitWidth })}>
+            Limit max width
+          </Check>
+          <Check checked={prefs.limitHeight} disabled={!prefs.fitHeight} onChange={(limitHeight) => setPrefs({ limitHeight })}>
+            Limit max height
+          </Check>
+
+          <h4>Image coloring</h4>
+          <Check checked={prefs.grayscale} onChange={(grayscale) => setPrefs({ grayscale })}>
+            Grayscale
+          </Check>
+          <Check checked={prefs.saver} onChange={(saver) => setPrefs({ saver })}>
+            Data saver (smaller images)
+          </Check>
+
+          <div className="rpanel__row">
+            <h4>Dim screen</h4>
+            <span className="rpanel__val">{prefs.dim}%</span>
+          </div>
+          <input
+            className="rrange"
+            type="range"
+            min={0}
+            max={80}
+            step={5}
+            value={prefs.dim}
+            onChange={(e) => setPrefs({ dim: Number(e.target.value) })}
+            style={{ "--fill": `${(prefs.dim / 80) * 100}%` } as React.CSSProperties}
+          />
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function HelpPanel({ onClose }: { onClose: () => void }) {
+  const keys: [string, string][] = [
+    ["← / A", "Previous page (or chapter in long strip)"],
+    ["→ / D", "Next page (or chapter in long strip)"],
+    ["↑ ↓ / Space", "Scroll the long strip"],
+    ["C", "Chapter list"],
+    ["S", "Settings"],
+    ["F", "Fullscreen"],
+    ["Esc", "Close this panel"],
+  ];
+  return (
+    <aside className="rpanel rpanel--help">
+      <PanelHead onClose={onClose}>
+        <strong>Shortcuts</strong>
+      </PanelHead>
+      <div className="rpanel__body">
+        {keys.map(([k, what]) => (
+          <div key={k} className="rkey">
+            <kbd>{k}</kbd>
+            <span>{what}</span>
+          </div>
+        ))}
+        <p className="muted rpanel__note">On phones, tap the left or right side of a page (or swipe) to turn it.</p>
+      </div>
+    </aside>
   );
 }

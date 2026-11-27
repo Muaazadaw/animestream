@@ -198,6 +198,28 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.4M12 17v.5" />
+    </>
+  ),
+  book: <path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5zM12 6.5v13" />,
+  single: <rect x="7" y="4" width="10" height="16" rx="1.5" />,
+  double: (
+    <>
+      <rect x="3.5" y="5" width="7.5" height="14" rx="1.5" />
+      <rect x="13" y="5" width="7.5" height="14" rx="1.5" />
+    </>
+  ),
+  strip: (
+    <>
+      <rect x="7" y="3" width="10" height="18" rx="1.5" />
+      <path d="M7 9h10M7 15h10" />
+    </>
+  ),
+  expand: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  minus: <path d="M5 12h14" />,
 };
 
 export function Icon({ name, size = 16 }: { name: keyof typeof PATHS | string; size?: number }) {
