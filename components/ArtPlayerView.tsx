@@ -5,7 +5,6 @@ import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { setUpscaleMode, startAnime4K, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
-import { setPlayerKind } from "@/lib/player-choice";
 import type { Stream } from "@/lib/sources/types";
 
 // The same player features as Player.tsx (Plyr), built on ArtPlayer
@@ -144,19 +143,6 @@ export default function ArtPlayerView({
             selector: UPSCALE_MODES.map((m) => ({ html: m.label, mode: m.id, default: m.id === cb.current.upscale })),
             onSelect(item: { html: string; mode: UpscaleMode }) {
               setUpscaleMode(item.mode);
-              return item.html;
-            },
-          },
-          {
-            name: "player",
-            html: "Player",
-            tooltip: "ArtPlayer",
-            selector: [
-              { html: "ArtPlayer", default: true },
-              { html: "Plyr", plyr: true },
-            ],
-            onSelect(item: { html: string; plyr?: boolean }) {
-              if (item.plyr) setPlayerKind("plyr");
               return item.html;
             },
           },
