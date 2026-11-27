@@ -169,7 +169,7 @@ export function LatestChapters({ items }: { items: LatestItem[] }) {
             <MangaPoster
               key={it.chapterId}
               m={it.manga}
-              href={`/manga/${it.manga.id}/read/${it.chapterId}`}
+              href={`/manga/${it.manga.id}`}
               left={`Ch. ${it.number}`}
               right={mounted ? ago(it.at) : ""}
             />
