@@ -12,13 +12,12 @@ export const revalidate = 900;
 export default async function HomePage() {
   const home = await getHome();
 
-  const candidates = home.trending.slice(0, 16);
+  const candidates = home.trending.slice(0, 20);
   const art = await Promise.all(candidates.map((m) => getHeroArt(m.id).catch(() => ({ backdrop: null, logo: null }))));
-  // Prefer TVDB's backdrop; fall back to AniList's banner; skip shows with neither.
-  const picks = candidates
-    .map((m, i) => ({ m, art: art[i], banner: art[i].backdrop ?? m.bannerImage }))
-    .filter((p) => p.banner)
-    .slice(0, 10);
+  // Shows with TVDB's 1080p backdrop come first. AniList's banner is a ~1900×500 strip that turns
+  // blurry when stretched to the hero, so it only fills in when there aren't enough HD ones.
+  const withArt = candidates.map((m, i) => ({ m, art: art[i], banner: art[i].backdrop ?? m.bannerImage }));
+  const picks = [...withArt.filter((p) => p.art.backdrop), ...withArt.filter((p) => !p.art.backdrop && p.banner)].slice(0, 10);
   const hero: HeroItem[] = picks.map(({ m, art, banner }) => {
     const eps = m.episodes ?? airedEpisodes(m);
     return {

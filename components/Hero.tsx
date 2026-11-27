@@ -37,7 +37,6 @@ export default function Hero({ items }: { items: HeroItem[] }) {
   const moved = useRef(false);
   const ref = useRef<HTMLElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
 
   const count = items.length;
   const paused = hovered || dragging;
@@ -102,17 +101,6 @@ export default function Hero({ items }: { items: HeroItem[] }) {
   }, []);
 
   if (count === 0) return null;
-  const cur = items[i];
-  const inList = listed.has(cur.id);
-
-  // Dragging moves the text directly, without re-rendering on every pointer move.
-  function setDragOffset(dx: number) {
-    const el = contentRef.current;
-    if (!el) return;
-    const width = ref.current?.clientWidth ?? 1000;
-    el.style.transform = dx ? `translateX(${dx * 0.6}px)` : "";
-    el.style.opacity = dx ? String(1 - Math.min(1, Math.abs(dx) / width) * 1.4) : "";
-  }
 
   function onPointerDown(e: React.PointerEvent) {
     if (count < 2 || (e.pointerType === "mouse" && e.button !== 0)) return;
@@ -137,7 +125,6 @@ export default function Hero({ items }: { items: HeroItem[] }) {
       setDragging(true);
     }
     moved.current = true;
-    setDragOffset(dx);
   }
 
   function onPointerUp(e: React.PointerEvent) {
@@ -147,7 +134,6 @@ export default function Hero({ items }: { items: HeroItem[] }) {
     const dx = e.clientX - s.x;
     const speed = Math.abs(dx) / Math.max(1, performance.now() - s.t);
     setDragging(false);
-    setDragOffset(0);
     if (Math.abs(dx) > SWIPE_PX || speed > SWIPE_SPEED) go(dx < 0 ? i + 1 : i - 1);
   }
 
@@ -181,43 +167,50 @@ export default function Hero({ items }: { items: HeroItem[] }) {
             ) : null}
           </div>
         ))}
+        {/* Pinned with the picture, so scrolling never shows unshaded image below the hero. */}
+        <div className="hero__shade" />
       </div>
-      <div className="hero__shade" />
-      <div className="hero__content" key={cur.id} ref={contentRef}>
-        {cur.logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="hero__logo" src={cur.logo} alt={cur.title} draggable={false} />
-        ) : (
-          <h1>{cur.title}</h1>
-        )}
-        <div className="hero__chips">
-          {cur.chips.map((c) => (
-            <span key={c}>{c}</span>
-          ))}
-        </div>
-        <p className="hero__desc">{cur.description}</p>
-        <div className="hero__actions">
-          <Link href={`/watch/${cur.id}`} className="hbtn hbtn--white" draggable={false}>
-            <Icon name="play" size={15} /> Watch Now
-          </Link>
-          <Link href={`/anime/${cur.id}`} className="hbtn" draggable={false}>
-            <Icon name="info" size={16} /> Details
-          </Link>
-          <button
-            className={`hbtn hbtn--icon ${inList ? "is-on" : ""}`}
-            aria-label={inList ? "Remove from My List" : "Add to My List"}
-            title={inList ? "In My List" : "Add to My List"}
-            onClick={() =>
-              setListStatus(
-                { id: cur.id, title: cur.title, cover: cur.cover, format: cur.format, episodes: cur.episodes },
-                inList ? null : "PLANNING",
-              )
-            }
-          >
-            <Icon name={inList ? "check" : "plus"} size={16} />
-          </button>
-        </div>
-      </div>
+      {/* Every slide's text is stacked in place; changing slides crossfades them without movement. */}
+      {items.map((it, n) => {
+        const inList = listed.has(it.id);
+        return (
+          <div key={it.id} className={`hero__content ${n === i ? "is-active" : ""}`} aria-hidden={n !== i}>
+            {it.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img className="hero__logo" src={it.logo} alt={it.title} draggable={false} />
+            ) : (
+              <h1>{it.title}</h1>
+            )}
+            <div className="hero__chips">
+              {it.chips.map((c) => (
+                <span key={c}>{c}</span>
+              ))}
+            </div>
+            <p className="hero__desc">{it.description}</p>
+            <div className="hero__actions">
+              <Link href={`/watch/${it.id}`} className="hbtn hbtn--white" draggable={false}>
+                <Icon name="play" size={15} /> Watch Now
+              </Link>
+              <Link href={`/anime/${it.id}`} className="hbtn" draggable={false}>
+                <Icon name="info" size={16} /> Details
+              </Link>
+              <button
+                className={`hbtn hbtn--icon ${inList ? "is-on" : ""}`}
+                aria-label={inList ? "Remove from My List" : "Add to My List"}
+                title={inList ? "In My List" : "Add to My List"}
+                onClick={() =>
+                  setListStatus(
+                    { id: it.id, title: it.title, cover: it.cover, format: it.format, episodes: it.episodes },
+                    inList ? null : "PLANNING",
+                  )
+                }
+              >
+                <Icon name={inList ? "check" : "plus"} size={16} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
 
       {count > 1 ? (
         <>
