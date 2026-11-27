@@ -66,7 +66,11 @@ export default function GatePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user: inviteUser, password: invitePass }),
     });
-    const d = (await r.json().catch(() => ({}))) as { invite?: string; error?: string };
+    const d = (await r.json().catch(() => ({}))) as { invite?: string; error?: string; admin?: boolean };
+    if (r.ok && d.admin) {
+      window.location.replace(nextPath());
+      return;
+    }
     setBusy(false);
     if (r.ok && d.invite) {
       setInvitePass("");
