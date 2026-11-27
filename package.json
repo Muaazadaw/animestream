@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "anime4k-webgpu": "^1.0.0",
+    "artplayer": "^5.4.0",
     "hls.js": "^1.5.17",
     "next": "^15.1.0",
     "plyr": "^3.7.8",

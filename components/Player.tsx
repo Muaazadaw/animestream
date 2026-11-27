@@ -5,6 +5,7 @@ import type Plyr from "plyr";
 import "plyr/dist/plyr.css";
 import { useEffect, useRef, useState } from "react";
 import { setUpscaleMode, startAnime4K, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
+import { setPlayerKind } from "@/lib/player-choice";
 import type { Stream } from "@/lib/sources/types";
 
 // Video player built on Plyr (controls, captions, settings, keyboard) with
@@ -112,6 +113,15 @@ function addUpscaleMenu(root: HTMLElement) {
     setUpscaleMode(b.dataset.mode as UpscaleMode);
     show(home);
   });
+  const swap = document.createElement("button");
+  swap.type = "button";
+  swap.className = "plyr__control plyr__control--forward";
+  swap.setAttribute("role", "menuitem");
+  swap.innerHTML = `<span>Player<span class="plyr__menu__value">Plyr</span></span>`;
+  swap.title = "Switch to ArtPlayer";
+  swap.addEventListener("click", () => setPlayerKind("artplayer"));
+  homeMenu.appendChild(swap);
+
   // Plyr only knows its own pages: start from the main page whenever the menu opens.
   root.querySelector('[data-plyr="settings"]')?.addEventListener("click", () => {
     pane.hidden = true;

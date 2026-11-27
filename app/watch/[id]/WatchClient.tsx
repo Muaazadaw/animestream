@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Menu, { Icon, MenuItem } from "@/components/Menu";
+import ArtPlayerView from "@/components/ArtPlayerView";
 import Player from "@/components/Player";
+import { getPlayerKind, PLAYER_EVENT, PLAYERS, setPlayerKind, type PlayerKind } from "@/lib/player-choice";
 import { getUpscaleMode, UPSCALE_EVENT, type UpscaleMode } from "@/lib/anime4k";
 import ListStatusMenu from "@/components/ListStatusMenu";
 import SideMediaList, { type SideMedia } from "@/components/SideMediaList";
@@ -50,6 +52,13 @@ function formatDate(d?: string) {
 export default function WatchClient({ anime, related, recommendations, providers, meta, seasons, initialEp, initialSource, initialAudio }: Props) {
   const [synopsisOpen, setSynopsisOpen] = useState(false);
   const [upscale, setUpscale] = useState<UpscaleMode>("off");
+  const [playerKind, setPlayerKindState] = useState<PlayerKind>("plyr");
+  useEffect(() => {
+    const sync = () => setPlayerKindState(getPlayerKind());
+    sync();
+    window.addEventListener(PLAYER_EVENT, sync);
+    return () => window.removeEventListener(PLAYER_EVENT, sync);
+  }, []);
   useEffect(() => {
     const sync = () => setUpscale(getUpscaleMode());
     sync();
@@ -208,29 +217,55 @@ export default function WatchClient({ anime, related, recommendations, providers
       <div className="watch__layout">
         <div className="watch__main">
           {stream ? (
-            <Player
-              stream={stream}
-              poster={currentMeta?.image ?? current?.thumbnail ?? anime.banner ?? undefined}
-              startAt={startAt}
-              autoSkip={prefs.autoSkip}
-              autoplayNext={prefs.autoplay}
-              autoStart={prefs.autoStart}
-              hasNext={!!next}
-              onNext={() => next && setEp(next.number)}
-              upscale={upscale}
-              onProgress={(time, duration) =>
-                saveProgress({
-                  id: anime.id,
-                  title: anime.title,
-                  cover: anime.cover,
-                  format: anime.format,
-                  episodes: anime.episodes,
-                  episode: ep,
-                  time,
-                  duration,
-                })
-              }
-            />
+            playerKind === "artplayer" ? (
+              <ArtPlayerView
+                stream={stream}
+                poster={currentMeta?.image ?? current?.thumbnail ?? anime.banner ?? undefined}
+                startAt={startAt}
+                autoSkip={prefs.autoSkip}
+                autoplayNext={prefs.autoplay}
+                autoStart={prefs.autoStart}
+                hasNext={!!next}
+                onNext={() => next && setEp(next.number)}
+                upscale={upscale}
+                onProgress={(time, duration) =>
+                  saveProgress({
+                    id: anime.id,
+                    title: anime.title,
+                    cover: anime.cover,
+                    format: anime.format,
+                    episodes: anime.episodes,
+                    episode: ep,
+                    time,
+                    duration,
+                  })
+                }
+              />
+            ) : (
+              <Player
+                stream={stream}
+                poster={currentMeta?.image ?? current?.thumbnail ?? anime.banner ?? undefined}
+                startAt={startAt}
+                autoSkip={prefs.autoSkip}
+                autoplayNext={prefs.autoplay}
+                autoStart={prefs.autoStart}
+                hasNext={!!next}
+                onNext={() => next && setEp(next.number)}
+                upscale={upscale}
+                onProgress={(time, duration) =>
+                  saveProgress({
+                    id: anime.id,
+                    title: anime.title,
+                    cover: anime.cover,
+                    format: anime.format,
+                    episodes: anime.episodes,
+                    episode: ep,
+                    time,
+                    duration,
+                  })
+                }
+              />
+            )
           ) : (
             <div className="player player--placeholder">
               {loading ? <div className="spinner" /> : null}
@@ -359,6 +394,16 @@ export default function WatchClient({ anime, related, recommendations, providers
               <Menu up align="right" heading="Playback" label={<Icon name="dots" />} className="menu--icon watch__more">
                 {() => (
                   <>
+                    <div className="menu__toggle">
+                      Player
+                      <span className="menu__seg">
+                        {PLAYERS.map((p) => (
+                          <button key={p.id} className={playerKind === p.id ? "is-active" : ""} onClick={() => setPlayerKind(p.id)}>
+                            {p.label}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
                     <label className="menu__toggle">
                       Autoplay next
                       <input type="checkbox" checked={prefs.autoplay} onChange={(e) => updatePrefs({ autoplay: e.target.checked })} />
