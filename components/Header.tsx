@@ -25,10 +25,12 @@ const MANGA_NAV = [
 ];
 
 /** Switches the remembered mode when you open an anime-only or manga-only page. */
-function ModeWatcher() {
+function ModeWatcher({ onTrending }: { onTrending: (on: boolean) => void }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const type = params.get("type");
+  const trending = pathname === "/search" && params.get("sort") === "TRENDING_DESC";
+  useEffect(() => onTrending(trending), [trending, onTrending]);
   useEffect(() => {
     if (pathname.startsWith("/manga") || (pathname === "/search" && type === "manga")) setMode("manga");
     else if (pathname === "/" || /^\/(anime|watch|schedule|trending|search)(\/|$)/.test(pathname)) setMode("anime");
@@ -69,6 +71,7 @@ export default function Header() {
 
   // Manga mode: on the manga pages, and on shared pages (My List, settings) after you picked it.
   const [mode, setModeState] = useState<Mode>("anime");
+  const [trendingSearch, setTrendingSearch] = useState(false);
   useEffect(() => {
     const sync = () => setModeState(getMode());
     sync();
@@ -97,8 +100,8 @@ export default function Header() {
   const active = (href: string) => {
     const [path, query] = href.split("?");
     if (path === "/" || path === "/manga") return pathname === path;
-    // Search sorted by trending (manga mode's Trending) still lights up Browse.
-    if (path === "/search") return pathname === "/search" && !query?.includes("TRENDING");
+    // Search sorted by trending is Trending (manga mode); any other search is Browse.
+    if (path === "/search") return pathname === "/search" && (query?.includes("TRENDING") ?? false) === trendingSearch;
     return pathname.startsWith(path);
   };
 
@@ -110,7 +113,7 @@ export default function Header() {
   return (
     <>
       <Suspense fallback={null}>
-        <ModeWatcher />
+        <ModeWatcher onTrending={setTrendingSearch} />
       </Suspense>
       <aside className="rail">
         <Link href="/" className="rail__logo" aria-label="Mayoi home">

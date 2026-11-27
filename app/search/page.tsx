@@ -121,8 +121,17 @@ export default async function SearchPage({ searchParams }: Props) {
     <div className="container page search-page">
       <div className="search-page__head">
         <div>
-          <h1>Search</h1>
-          <p>Simple when you want it, extremely specific when you need it.</p>
+          {manga && sp.sort === "TRENDING_DESC" && !sp.q ? (
+            <>
+              <h1>Trending manga</h1>
+              <p>What people are reading right now.</p>
+            </>
+          ) : (
+            <>
+              <h1>Search</h1>
+              <p>Simple when you want it, extremely specific when you need it.</p>
+            </>
+          )}
         </div>
         <nav className="search-page__types">
           {TYPES.map((t) => (
