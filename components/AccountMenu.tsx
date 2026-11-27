@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNotifications } from "@/lib/notifications";
 import { getProfile, STORAGE_EVENT, type Profile } from "@/lib/storage";
 import { logout, useAccount } from "@/lib/sync";
+import { getMode, setMode, type Mode } from "@/lib/mode";
 import { openSettings } from "@/lib/settings-modal";
 import { Icon } from "./Menu";
 
@@ -159,6 +160,77 @@ function Notifications() {
   );
 }
 
+/** Phones: the account menu as a bottom sheet with the site's pages, like an app menu. */
+function AccountSheet({ name, avatar, close }: { name: string; avatar?: string | null; close: () => void }) {
+  const [mode, setModeState] = useState<Mode>("anime");
+  useEffect(() => setModeState(getMode()), []);
+  const manga = mode === "manga";
+  const drag = useRef<number | null>(null);
+  const explore = manga
+    ? [
+        { href: "/manga", label: "Home", icon: "home" },
+        { href: "/search?type=manga&sort=TRENDING_DESC", label: "Trending", icon: "flame" },
+        { href: "/search?type=manga", label: "Discover", icon: "compass" },
+        { href: "/", label: "Switch to anime", icon: "play", mode: "anime" as const },
+      ]
+    : [
+        { href: "/", label: "Home", icon: "home" },
+        { href: "/trending", label: "Trending", icon: "flame" },
+        { href: "/search", label: "Discover", icon: "compass" },
+        { href: "/schedule", label: "Schedule", icon: "calendar" },
+        { href: "/manga", label: "Switch to manga", icon: "book", mode: "manga" as const },
+      ];
+
+  return (
+    <>
+      <div className="asheet__backdrop" onClick={close} />
+      <div className="asheet" role="dialog" aria-label="Account menu">
+        <div
+          className="sheet-handle"
+          onTouchStart={(e) => (drag.current = e.touches[0].clientY)}
+          onTouchEnd={(e) => {
+            if (drag.current !== null && e.changedTouches[0].clientY - drag.current > 70) close();
+            drag.current = null;
+          }}
+        >
+          <span />
+        </div>
+        <button className="asheet__x" onClick={close} aria-label="Close">
+          <Icon name="close" size={20} />
+        </button>
+        <div className="asheet__me">
+          <Avatar src={avatar} name={name} size={64} />
+          <strong>{name}</strong>
+        </div>
+        <div className="asheet__card">
+          <Link href="/library" onClick={close}>
+            <Icon name="user" size={20} /> <span>Your profile</span> <Icon name="next" size={16} />
+          </Link>
+          <Link href="/library?view=history" onClick={close}>
+            <Icon name="rewatch" size={20} /> <span>History</span> <Icon name="next" size={16} />
+          </Link>
+          <button onClick={() => (close(), openSettings("profile"))}>
+            <Icon name="gear" size={20} /> <span>Settings</span> <Icon name="next" size={16} />
+          </button>
+        </div>
+        <span className="asheet__label">Explore</span>
+        <div className="asheet__card">
+          {explore.map((x) => (
+            <Link key={x.href} href={x.href} onClick={() => (x.mode ? setMode(x.mode) : null, close())}>
+              <Icon name={x.icon} size={20} /> <span>{x.label}</span> <Icon name="next" size={16} />
+            </Link>
+          ))}
+        </div>
+        <div className="asheet__card">
+          <button className="asheet__out" onClick={() => (close(), void logout())}>
+            <Icon name="power" size={20} /> <span>Sign out</span>
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function AccountMenu() {
   const { user, display } = useAccount();
   const profile = useProfile();
@@ -172,6 +244,7 @@ export default function AccountMenu() {
         <button className={`acct__avatar ${open ? "is-open" : ""}`} onClick={() => setOpen(!open)} aria-label="Account menu">
           <Avatar src={profile.avatar} name={name} />
         </button>
+        {open ? <AccountSheet name={name} avatar={profile.avatar} close={() => setOpen(false)} /> : null}
         {open ? (
           <div className="acct__pop acct__menu">
             <div className="acct__row">

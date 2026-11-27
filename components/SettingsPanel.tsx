@@ -29,7 +29,7 @@ import { logout, syncNow, useAccount } from "@/lib/sync";
 
 const NAV: { group: string; items: { id: SettingsSection; label: string; icon: string }[] }[] = [
   {
-    group: "Your account",
+    group: "Account",
     items: [
       { id: "profile", label: "Profile & privacy", icon: "user" },
       { id: "connections", label: "Connected accounts", icon: "layers" },
@@ -183,8 +183,17 @@ export default function SettingsPanel({
   const [section, setSection] = useState<SettingsSection>(initial);
   const [q, setQ] = useState("");
   const mainRef = useRef<HTMLDivElement>(null);
+  // Phones show the section list first and slide into a section, like an app's settings.
+  // Opening straight to a section (e.g. from "Import from AniList") skips the list.
+  const [inSection, setInSection] = useState(initial !== "profile");
 
-  useEffect(() => setSection(initial), [initial]);
+  useEffect(() => {
+    setSection(initial);
+    setInSection(initial !== "profile");
+  }, [initial]);
+
+  // Swipe the sheet's handle down to close it.
+  const drag = useRef<number | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -197,6 +206,7 @@ export default function SettingsPanel({
 
   function open(id: SettingsSection) {
     setSection(id);
+    setInSection(true);
     setQ("");
     mainRef.current?.scrollTo({ top: 0 });
     if (!modal) window.history.replaceState(null, "", `#${id}`);
@@ -207,8 +217,28 @@ export default function SettingsPanel({
   const shown = searching ? ALL_SECTIONS : [section];
 
   return (
-    <div className={`sset ${modal ? "sset--modal" : ""}`} role={modal ? "dialog" : undefined} aria-modal={modal || undefined} aria-label="Settings">
+    <div
+      className={`sset ${modal ? "sset--modal" : ""} ${inSection || searching ? "is-section" : "is-list"}`}
+      role={modal ? "dialog" : undefined}
+      aria-modal={modal || undefined}
+      aria-label="Settings"
+    >
+      {modal ? (
+        <div
+          className="sheet-handle"
+          onTouchStart={(e) => (drag.current = e.touches[0].clientY)}
+          onTouchEnd={(e) => {
+            if (drag.current !== null && e.changedTouches[0].clientY - drag.current > 70) onClose();
+            drag.current = null;
+          }}
+        >
+          <span />
+        </div>
+      ) : null}
       <aside className="sset__nav">
+        <button className="sset__x" onClick={onClose} aria-label="Close settings">
+          <Icon name="close" size={20} />
+        </button>
         <div className="sset__me">
           <Avatar src={profile.avatar} name={name} size={30} />
           <strong>{name}</strong>
@@ -222,7 +252,10 @@ export default function SettingsPanel({
             {g.items.map((it) => (
               <button key={it.id} className={!searching && section === it.id ? "is-active" : ""} onClick={() => open(it.id)}>
                 <Icon name={it.icon} size={15} />
-                {it.label}
+                <span className="sset__label">{it.label}</span>
+                <span className="sset__chev">
+                  <Icon name="next" size={16} />
+                </span>
               </button>
             ))}
           </nav>
@@ -233,6 +266,9 @@ export default function SettingsPanel({
         <button className="sset__close" onClick={onClose} aria-label="Close settings">
           <Icon name="close" size={18} />
           <span>ESC</span>
+        </button>
+        <button className="sset__back" onClick={() => (setInSection(false), setQ(""))}>
+          <Icon name="prev" size={18} /> Settings
         </button>
         <OpenContext.Provider value={open}>
         <SearchContext.Provider value={q}>
