@@ -278,7 +278,11 @@ function ProfileSection() {
     <>
       <Group title="Account info">
         <Row title="Member since" desc={createdAt ? new Date(createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"} />
-        <Row title="AniList account" desc={`Signed in as ${shownName}. Your Mayoi account is your AniList account.`} where="account" />
+        {profile.anilist || display ? (
+          <Row title="AniList account" desc={`Linked to ${profile.anilist?.name ?? shownName} on AniList.`} where="account" />
+        ) : (
+          <Row title="Username" desc={user ?? "—"} where="account" />
+        )}
         <Row title="Profile picture" desc={profile.avatar ? (profile.avatar === profile.anilist?.avatar ? "From AniList" : "Custom image") : "Your initial"} where="account">
           <Avatar src={profile.avatar} name={shownName} size={36} />
           <button className="sbtn" onClick={() => setEditAvatar(!editAvatar)}>
@@ -353,8 +357,12 @@ function ConnectionsSection() {
         </>
       ) : (
         <Row
-          title={profile.anilist ? "AniList login expired" : "Reconnect AniList"}
-          desc="Sign in with AniList again on this device to keep your list syncing."
+          title={profile.anilist ? "AniList login expired" : "Connect AniList"}
+          desc={
+            profile.anilist
+              ? "Sign in with AniList again on this device to keep your list syncing."
+              : "Optional: link your AniList to bring in your list and keep it in step."
+          }
         >
           <a
             className="sbtn sbtn--primary"
@@ -365,7 +373,7 @@ function ConnectionsSection() {
               } catch {}
             }}
           >
-            Reconnect
+            {profile.anilist ? "Reconnect" : "Connect"}
           </a>
         </Row>
       )}

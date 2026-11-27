@@ -1,8 +1,20 @@
 import { NextResponse } from "next/server";
-import { currentUser, endSession, signInWithAniList, userInfo, viewerFromToken } from "@/lib/auth";
+import {
+  createLocalAccount,
+  currentUser,
+  endSession,
+  normalizeName,
+  signInLocal,
+  signInWithAniList,
+  userInfo,
+  validName,
+  viewerFromToken,
+} from "@/lib/auth";
 
 // GET  /api/auth                                → { user, createdAt, display, avatar }
 // POST /api/auth { action: "anilist", token }   → signs in with an AniList access token
+// POST /api/auth { action: "signup", username, password }  → local account (needs an invite entered first)
+// POST /api/auth { action: "login", username, password }
 // POST /api/auth { action: "logout" }
 export async function GET() {
   const user = await currentUser();
@@ -11,11 +23,33 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as { action?: string; token?: string };
+  const body = (await req.json().catch(() => ({}))) as { action?: string; token?: string; username?: string; password?: string };
 
   if (body.action === "logout") {
     await endSession();
     return NextResponse.json({ user: null });
+  }
+
+  if (body.action === "signup" || body.action === "login") {
+    if (!process.env.AUTH_SECRET) {
+      return NextResponse.json({ error: "The site isn't set up yet (AUTH_SECRET is missing)." }, { status: 500 });
+    }
+    const name = normalizeName(body.username ?? "");
+    const password = body.password ?? "";
+    try {
+      if (body.action === "signup") {
+        if (!validName(name)) return NextResponse.json({ error: "Usernames are 3–24 letters, numbers, _ or -." }, { status: 400 });
+        if (password.length < 8) return NextResponse.json({ error: "Passwords need at least 8 characters." }, { status: 400 });
+        const err = await createLocalAccount(name, password);
+        if (err) return NextResponse.json({ error: err, needsInvite: err.startsWith("Enter your invite") }, { status: 400 });
+      } else if (!(await signInLocal(name, password))) {
+        return NextResponse.json({ error: "Wrong username or password." }, { status: 401 });
+      }
+      return NextResponse.json({ user: name });
+    } catch (e) {
+      console.error("[api/auth]", e);
+      return NextResponse.json({ error: "Account storage is unavailable." }, { status: 500 });
+    }
   }
 
   if (body.action === "anilist") {

@@ -1274,3 +1274,18 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 .admin__table th { color: #9a9aa8; font-weight: 700; background: #121217; }
 .admin__table tr.is-revoked td { opacity: 0.45; }
 .admin__table .sbtn--danger { min-width: 0; }
+
+/* Sign-in: invite first; local account or AniList after */
+.gate__lock { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2a33; background: #121218; }
+.gate__lock strong { font-size: 15px; }
+.gate__lock span { font-size: 13px; color: #9a9aa8; }
+.gate__primary {
+  height: 46px; border-radius: 10px; border: 0; cursor: pointer; font-size: 15px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+.gate__primary:hover:not(:disabled) { filter: brightness(1.12); }
+.gate__primary:disabled { opacity: 0.5; cursor: default; }
+.gate__anilist { background: #13161f; border: 1px solid #2a3142; color: #3db4f2; }
+.gate__anilist:hover:not(:disabled) { filter: none; border-color: #3db4f2; background: #151b27; }
+.gate__or { display: flex; align-items: center; gap: 12px; width: 100%; color: #6f6f7c; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
+.gate__or::before, .gate__or::after { content: ""; flex: 1; height: 1px; background: #24242c; }

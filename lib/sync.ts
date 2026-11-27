@@ -103,6 +103,21 @@ export function startSync() {
   setInterval(() => user && document.visibilityState === "visible" && syncNow(), 60_000);
 }
 
+/** Create a local account (after an invite) or sign in to one. Returns an error, or null on success. */
+export async function loginLocal(action: "signup" | "login", username: string, password: string): Promise<{ error: string; needsInvite?: boolean } | null> {
+  const r = await fetch("/api/auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, username, password }),
+  });
+  const data = (await r.json().catch(() => ({}))) as { user?: string; error?: string; needsInvite?: boolean };
+  if (!r.ok) return { error: data.error ?? "Something went wrong.", needsInvite: data.needsInvite };
+  user = data.user ?? null;
+  emit();
+  await syncNow();
+  return null;
+}
+
 /**
  * Sign in with an AniList access token. Returns an error message, or null on
  * success. A first-time AniList user needs an invite entered beforehand.
