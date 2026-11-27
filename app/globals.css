@@ -1549,3 +1549,7 @@ body:has(.reader) .footer { display: none; }
 .chapters__list .chapter { animation: chapter-in 0.25s ease both; }
 @keyframes chapter-in { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) { .chapters__list .chapter { animation: none; } }
+
+/* Reader: no page scrollbar (scrolling still works with the wheel, keys and touch) */
+html:has(.reader) { scrollbar-width: none; }
+html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { display: none; }
