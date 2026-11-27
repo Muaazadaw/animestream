@@ -1,11 +1,17 @@
 "use client";
 
+
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Menu, { Icon, MenuItem } from "@/components/Menu";
 import Player from "@/components/Player";
 import type { EpisodeMeta } from "@/lib/extras";
 import type { ProviderEpisodes } from "@/lib/sources";
+import {
+  ANIVEXA_H_SUB_PROVIDERS,
+  ANIVEXA_PROVIDER_LABELS,
+  ANIVEXA_S_SUB_PROVIDERS,
+} from "@/lib/sources/anivexa";
 import type { EpisodeInfo, Stream } from "@/lib/sources/types";
 import {
   getHistory,
@@ -20,7 +26,9 @@ import {
   type SavedAnime,
 } from "@/lib/storage";
 
+
 export type Season = { id: number; title: string; cover: string | null; label: string; current?: boolean };
+
 
 type Props = {
   anime: SavedAnime & { banner: string | null };
@@ -32,7 +40,9 @@ type Props = {
   initialAudio: Audio | null;
 };
 
+
 const CHUNK = 100;
+
 
 function formatDate(d?: string) {
   if (!d) return "";
@@ -42,11 +52,13 @@ function formatDate(d?: string) {
     : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+
 export default function WatchClient({ anime, providers, meta, seasons, initialEp, initialSource, initialAudio }: Props) {
   const [mounted, setMounted] = useState(false);
   const [sourceId, setSourceId] = useState(
     providers.find((p) => p.id === initialSource)?.id ?? providers[0].id,
   );
+  const [anivexaProvider, setAnivexaProvider] = useState<string | null>(null);
   const [audio, setAudio] = useState<Audio>(initialAudio ?? "sub");
   const [ep, setEp] = useState<number>(initialEp ?? providers[0].episodes[0].number);
   const [stream, setStream] = useState<Stream | null>(null);
@@ -61,6 +73,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
   const [, bump] = useState(0);
   const activeRef = useRef<HTMLButtonElement>(null);
 
+
   const provider = providers.find((p) => p.id === sourceId) ?? providers[0];
   const episodes = provider.episodes;
   const idx = episodes.findIndex((e) => e.number === ep);
@@ -69,6 +82,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
   const next = idx >= 0 && idx < episodes.length - 1 ? episodes[idx + 1] : null;
   const hasAudio = (p: ProviderEpisodes, a: Audio) => p.audio.includes(a);
   const dubAnywhere = providers.some((p) => hasAudio(p, "dub"));
+
 
   // On first mount: restore prefs, preferred server/audio and last-watched episode.
   useEffect(() => {
@@ -94,20 +108,24 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+
   // Keep the selected episode inside the current server's list.
   useEffect(() => {
     if (episodes.length && !episodes.some((e) => e.number === ep)) setEp(episodes[0].number);
   }, [episodes, ep]);
+
 
   // Keep the visible episode range on the current episode.
   useEffect(() => {
     if (idx >= 0) setChunk(Math.floor(idx / CHUNK));
   }, [idx]);
 
+
   // Scroll the sidebar to the current episode.
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest" });
   }, [ep, mounted, view]);
+
 
   // Load the stream whenever episode, server or audio changes.
   useEffect(() => {
@@ -115,14 +133,18 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
     const url = `/watch/${anime.id}?ep=${ep}&source=${sourceId}${audio === "dub" ? "&audio=dub" : ""}`;
     window.history.replaceState(window.history.state, "", url);
 
+
     const ctrl = new AbortController();
     setLoading(true);
     setError(null);
     setStream(null);
     setStartAt(getPosition(anime.id, ep)?.t);
-    fetch(`/api/stream?id=${anime.id}&ep=${ep}&source=${encodeURIComponent(sourceId)}&audio=${audio}`, {
-      signal: ctrl.signal,
-    })
+    fetch(
+      `/api/stream?id=${anime.id}&ep=${ep}&source=${encodeURIComponent(sourceId)}&audio=${audio}` +
+        (anivexaProvider ? `&provider=${encodeURIComponent(anivexaProvider)}` : ""),
+      {
+        signal: ctrl.signal,
+      })
       .then(async (r) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error ?? "Could not load stream");
@@ -135,17 +157,21 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
         if (!ctrl.signal.aborted) setLoading(false);
       });
     return () => ctrl.abort();
-  }, [mounted, anime.id, ep, sourceId, audio, current]);
+  }, [mounted, anime.id, ep, sourceId, audio, anivexaProvider, current]);
+
 
   function updatePrefs(p: Partial<typeof prefs>) {
     setPrefsState((s) => ({ ...s, ...p }));
     setPrefs(p);
   }
 
+
   function pickSource(id: string) {
     setSourceId(id);
+    setAnivexaProvider(null);
     setPrefs({ sourceFor: { ...getPrefs().sourceFor, [anime.id]: id } });
   }
+
 
   function pickAudio(a: Audio) {
     setAudio(a);
@@ -156,6 +182,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
       if (alt) setSourceId(alt.id);
     }
   }
+
 
   const visible = useMemo(() => {
     const f = filter.trim().toLowerCase();
@@ -169,10 +196,12 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
     return desc ? [...list].reverse() : list;
   }, [episodes, filter, chunk, desc, meta]);
 
+
   // Episodes past what the viewer has reached get their stills and synopses hidden.
   const listProgress = mounted ? getLists()[anime.id]?.progress ?? 0 : 0;
   const reached = Math.max(ep, listProgress);
   const isSpoiler = (n: number) => prefs.hideSpoilers && n > reached;
+
 
   const currentMeta = meta[ep];
   const epTitle = currentMeta?.title ?? (current?.title && current.title !== `Episode ${ep}` ? current.title : null);
@@ -180,11 +209,13 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
     (p) => p.id !== sourceId && hasAudio(p, audio) && p.episodes.some((e) => e.number === ep),
   );
 
+
   return (
     <div className="watch container">
       <div className="watch__crumbs">
         <Link href="/">Home</Link> / <Link href={`/anime/${anime.id}`}>{anime.title}</Link> / Episode {ep}
       </div>
+
 
       <div className="watch__layout">
         <div className="watch__main">
@@ -229,6 +260,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
             </div>
           )}
 
+
           <div className="watch__bar">
             <div className="watch__title">
               <div className="watch__sub">
@@ -244,6 +276,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
               ) : null}
             </div>
 
+
             <div className="watch__actions">
               <button className="icon-btn" disabled={!prev} onClick={() => prev && setEp(prev.number)} title="Previous episode">
                 <Icon name="prev" />
@@ -251,6 +284,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
               <button className="icon-btn" disabled={!next} onClick={() => next && setEp(next.number)} title="Next episode">
                 <Icon name="next" />
               </button>
+
 
               <Menu
                 up
@@ -281,6 +315,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                   </>
                 )}
               </Menu>
+
 
               <Menu
                 up
@@ -325,6 +360,47 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                 }
               </Menu>
 
+
+              {(sourceId === "anivexa" || sourceId === "anivexa-hsub") && (
+                <Menu
+                  up
+                  align="right"
+                  heading="Anivexa server"
+                  className="menu--wide"
+                  label={
+                    <>
+                      <Icon name="layers" />
+                      {anivexaProvider
+                        ? ANIVEXA_PROVIDER_LABELS[anivexaProvider] ?? anivexaProvider
+                        : "Choose server"}
+                      <Icon name="chevron" size={14} />
+                    </>
+                  }
+                >
+                  {(close) => {
+                    const options =
+                      sourceId === "anivexa"
+                        ? ANIVEXA_S_SUB_PROVIDERS
+                        : ANIVEXA_H_SUB_PROVIDERS;
+
+                    return options.map((option) => (
+                      <MenuItem
+                        key={option}
+                        icon={<Icon name="bolt" />}
+                        active={anivexaProvider === option}
+                        onClick={() => {
+                          setAnivexaProvider(option);
+                          close();
+                        }}
+                      >
+                        {ANIVEXA_PROVIDER_LABELS[option] ?? option}
+                      </MenuItem>
+                    ));
+                  }}
+                </Menu>
+              )}
+
+
               <Menu up align="right" heading="Playback" label={<Icon name="dots" />} className="menu--icon">
                 {() => (
                   <>
@@ -341,7 +417,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                       <input
                         type="checkbox"
                         checked={prefs.hideSpoilers}
-                        onChange={(e) => updatePrefs({ hideSpoilers: e.target.checked })}
+                        onChange={(e) => updatePrefs({ hideSpoilers: !prefs.hideSpoilers })}
                       />
                     </label>
                   </>
@@ -350,8 +426,10 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
             </div>
           </div>
 
+
           {currentMeta?.overview && !isSpoiler(ep) ? <p className="watch__overview">{currentMeta.overview}</p> : null}
         </div>
+
 
         <aside className="side">
           <div className="episodes">
@@ -396,6 +474,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
               </select>
             ) : null}
 
+
             <div className={`episodes__list ${view === "grid" ? "episodes__list--grid" : ""}`}>
               {visible.map((e) => {
                 const pos = mounted ? getPosition(anime.id, e.number) : null;
@@ -406,6 +485,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                 const progress = pos && pos.d && !watched ? (
                   <span className="ep__progress" style={{ width: `${(pos.t / pos.d) * 100}%` }} />
                 ) : null;
+
 
                 if (view === "grid") {
                   return (
@@ -421,6 +501,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                     </button>
                   );
                 }
+
 
                 const spoiler = isSpoiler(e.number);
                 const img = m?.image ?? e.thumbnail ?? anime.banner ?? anime.cover;
@@ -455,6 +536,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
               })}
             </div>
           </div>
+
 
           {seasons.length > 1 ? (
             <div className="seasons">

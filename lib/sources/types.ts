@@ -62,5 +62,10 @@ export interface SourceProvider {
   /** Episodes this provider has for the given anime. Return [] if none. */
   getEpisodes(anime: AnimeRef): Promise<EpisodeInfo[]>;
   /** A playable stream for one episode, or null if unavailable. */
-  getStream(anime: AnimeRef, episode: number, audio?: Audio): Promise<Stream | null>;
+ getStream(
+  anime: AnimeRef,
+  episode: number,
+  audio?: Audio,
+  provider?: string,
+): Promise<Stream | null>;
 }
