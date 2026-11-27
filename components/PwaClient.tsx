@@ -38,6 +38,12 @@ export default function PwaClient() {
     } catch {}
     if (dismissed) return;
 
+    // Phones and tablets only; on a computer the browser's own install icon is enough.
+    const ua = navigator.userAgent;
+    const isIos = /iphone|ipad|ipod/i.test(ua) || (ua.includes("Mac") && navigator.maxTouchPoints > 1);
+    const isMobile = isIos || /android|mobile/i.test(ua);
+    if (!isMobile) return;
+
     const onPrompt = (e: Event) => {
       e.preventDefault();
       setPrompt(e as InstallPrompt);
@@ -46,8 +52,6 @@ export default function PwaClient() {
     window.addEventListener("beforeinstallprompt", onPrompt);
 
     // iPhone/iPad Safari has no install event; offer the manual steps instead.
-    const ua = navigator.userAgent;
-    const isIos = /iphone|ipad|ipod/i.test(ua) || (ua.includes("Mac") && navigator.maxTouchPoints > 1);
     if (isIos && /safari/i.test(ua) && !/crios|fxios|edgios/i.test(ua)) {
       setIos(true);
       setShow(true);
