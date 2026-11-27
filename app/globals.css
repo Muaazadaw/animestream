@@ -126,7 +126,6 @@ body { padding-left: var(--rail); }
 /* The banner is pinned behind the page (the page scrolls over it) and fades out on scroll; slides crossfade. */
 .hero__banner {
   position: fixed; top: 0; left: var(--rail); right: 0; z-index: -1; pointer-events: none; overflow: hidden;
-  height: calc(min(82vh, 720px) + 4rem); min-height: calc(480px + 4rem);
 }
 .hero__banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 50%, var(--bg)); }
 .hero__bg { position: absolute; inset: 0; opacity: 0; transition: opacity 0.9s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -157,7 +156,7 @@ body { padding-left: var(--rail); }
 .hero__dots button.is-active { width: 28px; background: var(--accent); }
 @media (max-width: 760px) {
   .hero { height: 70vh; }
-  .hero__banner { left: 0; height: calc(70vh + 4rem); }
+  .hero__banner { left: 0; }
   .hero__shade { background: linear-gradient(0deg, var(--bg) 15%, rgba(11, 11, 16, 0.6) 60%, rgba(11, 11, 16, 0.3)); }
   .hero__content { bottom: 60px; }
   .hero__dots { left: var(--gutter); right: auto; bottom: 24px; }
@@ -852,7 +851,10 @@ video::cue {
 
 
 /* Home: hero */
-.hero { height: min(82vh, 720px); min-height: 480px; }
+/* Taller on big monitors, shorter on phones. The pinned banner uses the same size, so its fade to
+   the page colour ends exactly where the hero's shade does. */
+:root { --hero-h: min(82svh, max(720px, 40vw)); --hero-min: 480px; }
+.hero, .hero__banner { height: var(--hero-h); min-height: var(--hero-min); }
 .hero__shade {
   background: linear-gradient(90deg, rgba(11, 11, 16, 0.92) 0%, rgba(11, 11, 16, 0.55) 38%, transparent 70%),
     linear-gradient(0deg, var(--bg) 0%, rgba(11, 11, 16, 0.4) 30%, transparent 55%);
@@ -877,6 +879,31 @@ video::cue {
 .hero__dots { left: 0; right: 0; bottom: 26px; justify-content: center; gap: 6px; }
 .hero__dots button { width: 14px; height: 4px; border-radius: 2px; }
 .hero__dots button.is-active { width: 30px; background: #fff; }
+/* Line the hero text up with the centred page content below it on wide screens. */
+.hero__content { left: max(var(--gutter), calc((100% - 1600px) / 2 + var(--gutter))); }
+@media (min-width: 1800px) {
+  .hero__content { max-width: 640px; gap: 16px; }
+  .hero__logo { max-width: min(460px, 80%); max-height: 180px; }
+  .hero__chips span { font-size: 14px; padding: 5px 14px; }
+  .hero__desc { font-size: 15.5px; }
+  .hbtn { height: 46px; padding: 0 20px; font-size: 16px; }
+  .hbtn--icon { width: 46px; padding: 0; }
+}
+@media (max-width: 760px) {
+  :root { --hero-h: 72svh; --hero-min: 440px; }
+  .hero__content { bottom: 56px; }
+  .hero__logo { max-height: 110px; }
+  .hero__chips span { font-size: 12px; padding: 3px 10px; }
+  .hero__desc { font-size: 13px; -webkit-line-clamp: 3; }
+  .hbtn { height: 38px; padding: 0 14px; font-size: 14px; }
+  .hbtn--icon { width: 38px; padding: 0; }
+}
+/* Short landscape windows (laptops with a docked taskbar, phones sideways). */
+@media (max-height: 560px) and (orientation: landscape) {
+  :root { --hero-min: 340px; }
+  .hero__logo { max-height: 80px; }
+  .hero__desc { -webkit-line-clamp: 2; }
+}
 
 /* Home: continue watching cards */
 .card__badge--dark { background: rgba(0, 0, 0, 0.78); top: auto; bottom: 10px; left: 10px; border: 1px solid rgba(255, 255, 255, 0.18); }

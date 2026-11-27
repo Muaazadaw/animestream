@@ -42,10 +42,16 @@ async function aniZip(id: number): Promise<AniZip | null> {
   }
 }
 
-/** A transparent title logo (fanart.tv "clearlogo") for the hero, if one exists. */
-export async function getClearLogo(id: number): Promise<string | null> {
+/**
+ * Hero art from TVDB: the series' top-rated 1080p background (sharper and better framed than
+ * AniList's banner strip) and its transparent title logo. Either may be null.
+ */
+export async function getHeroArt(id: number): Promise<{ backdrop: string | null; logo: string | null }> {
   const z = await aniZip(id);
-  return z?.images?.find((i) => i.coverType?.toLowerCase() === "clearlogo")?.url ?? null;
+  const find = (type: string) => z?.images?.find((i) => i.coverType?.toLowerCase() === type)?.url ?? null;
+  const logo = find("clearlogo");
+  // Some "clearlogos" are old JPEG icons with a solid background; only PNGs are see-through.
+  return { backdrop: find("fanart"), logo: logo && /\.png$/i.test(logo) ? logo : null };
 }
 
 /** Episode titles, synopses, stills and air dates, keyed by episode number. */
