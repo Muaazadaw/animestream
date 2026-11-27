@@ -146,76 +146,63 @@ export function ReadMore({ text }: { text: string }) {
   );
 }
 
-function when(iso: string | null) {
+/** "2d ago", "3w ago", "4mo ago"… */
+function ago(iso: string | null) {
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  if (s < 86400 * 7) return `${Math.round(s / 86400)}d ago`;
+  if (s < 86400 * 30) return `${Math.round(s / (86400 * 7))}w ago`;
+  if (s < 86400 * 365) return `${Math.round(s / (86400 * 30))}mo ago`;
+  return `${Math.round(s / (86400 * 365))}y ago`;
 }
 
-const RANGE = 100;
-const PER_PAGE = 24;
+const PER_PAGE = 20;
 
-/** Which block of 100 a chapter number falls in (1–100 → 0, 101–200 → 1…). */
-const rangeOf = (number: string) => Math.max(0, Math.floor((Math.floor(parseFloat(number) || 0) - 1) / RANGE));
+/** Page numbers to show around the current one: 1 … 4 5 [6] 7 8 … 16 */
+function pageWindow(current: number, pages: number): (number | "gap")[] {
+  const out: (number | "gap")[] = [];
+  for (let i = 0; i < pages; i++) {
+    if (i === 0 || i === pages - 1 || Math.abs(i - current) <= 2) out.push(i);
+    else if (out[out.length - 1] !== "gap") out.push("gap");
+  }
+  return out;
+}
 
-/** All readable chapters: a range dropdown (Ch. 1–100…), pages of 24, a number search and sort. */
+/** All readable chapters as one list: search, sort, pages of 20, and a bookmark on where you're up to. */
 export function ChapterList({ mangaId }: { mangaId: number }) {
   const { chapters, error } = useChapters(mangaId);
   const { entry } = useEntry(mangaId);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"desc" | "asc" | "date">("desc");
-  const [range, setRange] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const top = useRef<HTMLElement>(null);
   const progress = entry?.progress ?? 0;
 
-  // Ranges that have chapters, e.g. [{ id: 2, label: "Ch. 201–300" }].
-  const ranges = useMemo(() => {
-    const byRange = new Map<number, number[]>();
-    for (const c of chapters ?? []) {
-      const r = rangeOf(c.number);
-      byRange.set(r, [...(byRange.get(r) ?? []), parseFloat(c.number) || 0]);
-    }
-    const list = [...byRange.entries()].map(([id, nums]) => ({
-      id,
-      label: `Ch. ${Math.floor(Math.min(...nums))}–${Math.floor(Math.max(...nums))}`,
-    }));
-    list.sort((a, b) => a.id - b.id);
-    return sort === "asc" ? list : list.reverse();
-  }, [chapters, sort]);
-
-  // Open on the range with your next chapter, or the newest one.
-  useEffect(() => {
-    if (!chapters?.length || range !== null) return;
-    const next = chapters.find((c) => parseFloat(c.number) > progress);
-    setRange(rangeOf((next ?? chapters[chapters.length - 1]).number));
-  }, [chapters, progress, range]);
-
   const term = q.trim();
-  // Searching or sorting by date looks through every chapter; otherwise just the chosen range.
-  const useRanges = !term && sort !== "date" && ranges.length > 1;
   const shown = useMemo(() => {
     let list = [...(chapters ?? [])];
     if (sort === "desc") list.reverse();
     if (sort === "date") list.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
     if (term) list = list.filter((c) => c.number.startsWith(term) || c.title?.toLowerCase().includes(term.toLowerCase()));
-    else if (useRanges && range !== null) list = list.filter((c) => rangeOf(c.number) === range);
     return list;
-  }, [chapters, sort, term, useRanges, range]);
+  }, [chapters, sort, term]);
 
   const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
   const current = Math.min(page, pages - 1);
   const visible = shown.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
 
-  // Start from page 1 of whatever you switch to; open the page with your next chapter in a range.
+  // Open on the page with your next chapter (the lowest number above your progress).
   useEffect(() => {
-    if (!useRanges || term) return setPage(0);
-    // Your next chapter is the lowest number above your progress, wherever the sort puts it.
-    const ahead = shown.filter((c) => parseFloat(c.number) > progress);
-    const next = ahead.reduce<Chapter | null>((m, c) => (!m || parseFloat(c.number) < parseFloat(m.number) ? c : m), null);
-    const i = progress && next ? shown.indexOf(next) : 0;
+    if (term || !progress) return setPage(0);
+    const next = shown
+      .filter((c) => parseFloat(c.number) > progress)
+      .reduce<Chapter | null>((m, c) => (!m || parseFloat(c.number) < parseFloat(m.number) ? c : m), null);
+    const i = next ? shown.indexOf(next) : 0;
     setPage(i > 0 ? Math.floor(i / PER_PAGE) : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, sort, term, useRanges]);
+  }, [sort, term, chapters?.length, progress > 0]);
 
   const goPage = (p: number) => {
     setPage(p);
@@ -224,104 +211,95 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
     if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const pager =
-    pages > 1 ? (
-      <div className="pager-pill">
-        <button disabled={current === 0} onClick={() => goPage(current - 1)} aria-label="Previous page">
-          <Icon name="prev" size={14} />
-        </button>
-        <span>
-          {current + 1} / {pages}
-        </span>
-        <button disabled={current >= pages - 1} onClick={() => goPage(current + 1)} aria-label="Next page">
-          <Icon name="next" size={14} />
-        </button>
-      </div>
-    ) : null;
+  const missing = (() => {
+    if (!chapters?.length) return null;
+    const last = Math.floor(parseFloat(chapters[chapters.length - 1].number));
+    const whole = chapters.filter((c) => Number.isInteger(parseFloat(c.number)) && parseFloat(c.number) >= 1).length;
+    return last - whole > 0 ? { have: chapters.length, last } : null;
+  })();
 
   return (
     <section className="chapters" ref={top}>
-      <div className="chapters__head">
-        <h2>
-          Chapters <span>{chapters?.length ?? ""}</span>
-        </h2>
-        <div className="chapters__tools">
-          <input
-            className="chapters__search"
-            placeholder="Find chapter"
-            inputMode="decimal"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          {useRanges ? (
-            <select className="select chapters__range" value={range ?? ""} onChange={(e) => setRange(Number(e.target.value))} aria-label="Chapter range">
-              {ranges.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <span className="chapters__lang">EN</span>
-          <div className="mtabs">
+      <h2 className="chapters__title">
+        Chapters <span>{chapters?.length ?? ""}</span>
+      </h2>
+      {missing ? (
+        <p className="mgap chapters__gap">
+          Mayoi has {missing.have} of {missing.last}+ chapters for this one. The rest aren&apos;t available in English yet.
+        </p>
+      ) : null}
+
+      <div className="clist">
+        <div className="clist__bar">
+          <label className="clist__search">
+            <Icon name="search" size={14} />
+            <input placeholder="Search chapter number…" inputMode="decimal" value={q} onChange={(e) => setQ(e.target.value)} />
+          </label>
+          <span className="clist__pill">
+            <em>Lang</em> English
+          </span>
+          <span className="clist__sort">
+            <em>Sort</em>
             <button className={sort !== "date" ? "is-active" : ""} onClick={() => setSort(sort === "desc" ? "asc" : "desc")}>
               Chapter {sort === "asc" ? "↑" : "↓"}
             </button>
             <button className={sort === "date" ? "is-active" : ""} onClick={() => setSort("date")}>
               Date
             </button>
-          </div>
+          </span>
         </div>
-      </div>
 
-      {chapters === null ? (
-        <div className="chapters__list">
-          {Array.from({ length: 6 }, (_, i) => (
-            <span key={i} className="chapter chapter--skeleton" />
-          ))}
-        </div>
-      ) : chapters.length === 0 ? (
-        <p className="empty">
-          {error ? "Couldn't load chapters right now. Try again in a bit." : "No chapters available to read on Mayoi yet."}
-        </p>
-      ) : shown.length === 0 ? (
-        <p className="empty">No chapter matches “{q}”.</p>
-      ) : (
-        <>
-          {(() => {
-            const last = Math.floor(parseFloat(chapters[chapters.length - 1].number));
-            const missing = last - chapters.filter((c) => Number.isInteger(parseFloat(c.number)) && parseFloat(c.number) >= 1).length;
-            return missing > 0 ? (
-              <p className="mgap chapters__gap">
-                Mayoi has {chapters.length} of {last}+ chapters for this one. The rest aren&apos;t available in English yet.
-              </p>
-            ) : null;
-          })()}
-          <div className="chapters__list">
+        {chapters === null ? (
+          <div className="clist__rows">
+            {Array.from({ length: 8 }, (_, i) => (
+              <span key={i} className="crow crow--skeleton" />
+            ))}
+          </div>
+        ) : chapters.length === 0 ? (
+          <p className="empty clist__empty">
+            {error ? "Couldn't load chapters right now. Try again in a bit." : "No chapters available to read on Mayoi yet."}
+          </p>
+        ) : shown.length === 0 ? (
+          <p className="empty clist__empty">No chapter matches “{q}”.</p>
+        ) : (
+          <div className="clist__rows">
             {visible.map((c) => {
-              const read = parseFloat(c.number) <= progress;
+              const n = parseFloat(c.number);
+              const read = n <= progress;
+              const here = progress > 0 && Math.floor(n) === progress;
               return (
-                <Link key={c.id} href={`/manga/${mangaId}/read/${c.id}`} className={`chapter ${read ? "is-read" : ""}`}>
-                  <span className="chapter__num">Chapter {c.number}</span>
-                  <span className="chapter__title">{c.title ?? ""}</span>
-                  <span className="chapter__meta">
-                    {c.group ? <span>{c.group}</span> : null}
-                    <span>{when(c.publishedAt)}</span>
+                <Link key={c.id} href={`/manga/${mangaId}/read/${c.id}`} className={`crow ${read ? "is-read" : ""} ${here ? "is-here" : ""}`}>
+                  <span className="crow__lang">EN</span>
+                  <span className="crow__num">Ch. {c.number}</span>
+                  <span className="crow__title">{c.title ?? ""}</span>
+                  <span className="crow__when" title={c.group ? `Scanlated by ${c.group}` : undefined}>
+                    {ago(c.publishedAt)}
+                  </span>
+                  <span className="crow__mark" title={here ? "You're here" : read ? "Read" : "Not read yet"}>
+                    <Icon name="bookmark" size={14} />
                   </span>
                 </Link>
               );
             })}
           </div>
-          {pager ? (
-            <div className="chapters__foot">
-              <span className="muted">
-                {current * PER_PAGE + 1}–{Math.min(shown.length, (current + 1) * PER_PAGE)} of {shown.length}
+        )}
+      </div>
+
+      {pages > 1 ? (
+        <nav className="cpages" aria-label="Chapter pages">
+          {pageWindow(current, pages).map((p, i) =>
+            p === "gap" ? (
+              <span key={`gap${i}`} className="cpages__gap">
+                …
               </span>
-              {pager}
-            </div>
-          ) : null}
-        </>
-      )}
+            ) : (
+              <button key={p} className={p === current ? "is-active" : ""} onClick={() => goPage(p)}>
+                {p + 1}
+              </button>
+            ),
+          )}
+        </nav>
+      ) : null}
     </section>
   );
 }
