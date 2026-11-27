@@ -1541,3 +1541,7 @@ body:has(.reader) .footer { display: none; }
 .admin__actions { display: flex; gap: 8px; justify-content: flex-end; }
 .admin__table { display: block; overflow-x: auto; }
 @media (min-width: 761px) { .admin__table { display: table; } }
+
+/* Manga: note about chapters Mayoi doesn't have */
+.mgap { margin: -2px 0 0; font-size: 13px; color: #e3c58f; }
+.chapters__gap { margin: 0 0 12px; }

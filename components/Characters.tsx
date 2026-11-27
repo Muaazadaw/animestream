@@ -11,6 +11,8 @@ export default function Characters({ characters }: { characters: Character[] }) 
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const hasEnglish = characters.some((c) => c.voiceActors.english.length);
+  // Manga characters have no voice actors, so there's no second column to keep space for.
+  const hasVoices = characters.some((c) => c.voiceActors.japanese.length || c.voiceActors.english.length);
   const shown = all ? characters : characters.slice(0, FIRST);
   const selected = characters.find((c) => c.id === open);
 
@@ -47,7 +49,7 @@ export default function Characters({ characters }: { characters: Character[] }) 
                 </span>
               ) : null}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              {va?.image ? <img src={va.image} alt="" loading="lazy" /> : <span className="cast__blank" />}
+              {va?.image ? <img src={va.image} alt="" loading="lazy" /> : hasVoices ? <span className="cast__blank" /> : null}
             </button>
           );
         })}

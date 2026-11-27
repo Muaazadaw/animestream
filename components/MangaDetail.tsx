@@ -31,11 +31,22 @@ function useEntry(id: number) {
   return { entry, fav, setFav };
 }
 
-/** The chapter to open next: the one after your progress, or the first. */
+/**
+ * The chapter to open next: the one after your progress, or the first. `skips` is
+ * true when chapters in between aren't on Mayoi (MangaDex only has some of them).
+ */
 function nextChapter(chapters: Chapter[], progress: number) {
-  if (!progress) return { chapter: chapters[0], continuing: false };
+  const first = parseFloat(chapters[0].number);
+  if (!progress) return { chapter: chapters[0], continuing: false, skips: first > 1 };
   const next = chapters.find((c) => parseFloat(c.number) > progress);
-  return { chapter: next ?? chapters[chapters.length - 1], continuing: true };
+  if (!next) return { chapter: chapters[chapters.length - 1], continuing: true, skips: false, caughtUp: true };
+  return { chapter: next, continuing: true, skips: Math.floor(parseFloat(next.number)) > Math.floor(progress) + 1 };
+}
+
+/** "Ch. 25–254" for the chapters between your progress and the next one Mayoi has. */
+function gapLabel(from: number, to: string) {
+  const end = Math.ceil(parseFloat(to)) - 1;
+  return end > from ? `Ch. ${from}–${end}` : `Ch. ${from}`;
 }
 
 /** Continue / Start reading, list status and favourite. */
@@ -44,15 +55,26 @@ export function MangaActions({ manga }: { manga: SavedAnime }) {
   const { entry, fav, setFav } = useEntry(manga.id);
   const saved: SavedAnime = { ...manga, type: "MANGA" };
   const status = STATUSES.find((s) => s.id === entry?.status);
-  const target = chapters?.length ? nextChapter(chapters, entry?.progress ?? 0) : null;
+  const progress = entry?.progress ?? 0;
+  const target = chapters?.length ? nextChapter(chapters, progress) : null;
+  const label = !target
+    ? ""
+    : target.caughtUp
+      ? "Read again"
+      : target.skips
+        ? "Next available"
+        : target.continuing
+          ? "Continue"
+          : "Start reading";
 
   return (
+    <>
     <div className="hero__actions">
       {chapters === null ? (
         <span className="btn btn--primary btn--disabled">Loading chapters…</span>
       ) : target ? (
         <Link href={`/manga/${manga.id}/read/${target.chapter.id}`} className="btn btn--primary">
-          <Icon name="play" size={15} /> {target.continuing ? "Continue" : "Start reading"} · Ch. {target.chapter.number}
+          <Icon name="play" size={15} /> {label} · Ch. {target.chapter.number}
         </Link>
       ) : (
         <span className="btn btn--disabled">Not available to read yet</span>
@@ -94,6 +116,16 @@ export function MangaActions({ manga }: { manga: SavedAnime }) {
         <Icon name="heart" size={16} />
       </button>
     </div>
+    {target?.skips ? (
+      <p className="mgap">
+        {progress
+          ? `You're on Ch. ${progress}. ${gapLabel(progress + 1, target.chapter.number)} aren't available on Mayoi, so this skips ahead.`
+          : `Mayoi's copy starts at Ch. ${target.chapter.number}; earlier chapters aren't available.`}
+      </p>
+    ) : target?.caughtUp && progress > parseFloat(target.chapter.number) ? (
+      <p className="mgap">You&apos;re on Ch. {progress}, past the last chapter Mayoi has (Ch. {target.chapter.number}).</p>
+    ) : null}
+    </>
   );
 }
 
@@ -178,6 +210,15 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
         <p className="empty">No chapter matches “{q}”.</p>
       ) : (
         <>
+          {(() => {
+            const last = Math.floor(parseFloat(chapters[chapters.length - 1].number));
+            const missing = last - chapters.filter((c) => Number.isInteger(parseFloat(c.number)) && parseFloat(c.number) >= 1).length;
+            return missing > 0 ? (
+              <p className="mgap chapters__gap">
+                Mayoi has {chapters.length} of {last}+ chapters for this one. The rest aren&apos;t available on MangaDex in English.
+              </p>
+            ) : null;
+          })()}
           <div className="chapters__list">
             {shown.slice(0, limit).map((c) => {
               const read = parseFloat(c.number) <= progress;
