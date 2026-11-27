@@ -23,33 +23,62 @@ const INTERVAL_MS = 7000;
 /** Drag distance (px) or flick speed (px/ms) that counts as a swipe. */
 const SWIPE_PX = 60;
 const SWIPE_SPEED = 0.45;
+/** Scroll distance over which the pinned banner fades out. */
+const FADE_PX = 460;
 
 export default function Hero({ items }: { items: HeroItem[] }) {
   const [i, setI] = useState(0);
-  const [dir, setDir] = useState<1 | -1>(1);
   const [hovered, setHovered] = useState(false);
-  const [drag, setDrag] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [listed, setListed] = useState<Set<number>>(new Set());
+  // Banners we've asked the browser for; the rest load as their turn comes up.
+  const [seen, setSeen] = useState<Set<number>>(() => new Set([0, 1]));
   const start = useRef<{ x: number; y: number; t: number; id: number; horizontal: boolean | null } | null>(null);
   const moved = useRef(false);
   const ref = useRef<HTMLElement>(null);
+  const bannerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const count = items.length;
   const paused = hovered || dragging;
 
-  function go(n: number, d: 1 | -1) {
-    setDir(d);
+  function go(n: number) {
     setI(((n % count) + count) % count);
   }
+
+  useEffect(() => {
+    setSeen((s) => {
+      const next = [(i + 1) % count, (i - 1 + count) % count].filter((n) => !s.has(n));
+      if (s.has(i) && next.length === 0) return s;
+      return new Set([...s, i, ...next]);
+    });
+  }, [i, count]);
 
   // Autoplay; restarts whenever the slide changes.
   useEffect(() => {
     if (paused || count < 2) return;
-    const t = setTimeout(() => go(i + 1, 1), INTERVAL_MS);
+    const t = setTimeout(() => go(i + 1), INTERVAL_MS);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i, paused, count]);
+
+  // The banner is pinned behind the page and fades out as you scroll past it.
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      if (bannerRef.current) bannerRef.current.style.opacity = String(Math.max(0, 1 - window.scrollY / FADE_PX));
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
 
   // Arrow keys while the hero is on screen.
   useEffect(() => {
@@ -58,8 +87,8 @@ export default function Hero({ items }: { items: HeroItem[] }) {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       const r = ref.current?.getBoundingClientRect();
       if (!r || r.bottom < 0 || r.top > window.innerHeight) return;
-      if (e.key === "ArrowRight") go(i + 1, 1);
-      if (e.key === "ArrowLeft") go(i - 1, -1);
+      if (e.key === "ArrowRight") go(i + 1);
+      if (e.key === "ArrowLeft") go(i - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -75,6 +104,15 @@ export default function Hero({ items }: { items: HeroItem[] }) {
   if (count === 0) return null;
   const cur = items[i];
   const inList = listed.has(cur.id);
+
+  // Dragging moves the text directly, without re-rendering on every pointer move.
+  function setDragOffset(dx: number) {
+    const el = contentRef.current;
+    if (!el) return;
+    const width = ref.current?.clientWidth ?? 1000;
+    el.style.transform = dx ? `translateX(${dx * 0.6}px)` : "";
+    el.style.opacity = dx ? String(1 - Math.min(1, Math.abs(dx) / width) * 1.4) : "";
+  }
 
   function onPointerDown(e: React.PointerEvent) {
     if (count < 2 || (e.pointerType === "mouse" && e.button !== 0)) return;
@@ -99,7 +137,7 @@ export default function Hero({ items }: { items: HeroItem[] }) {
       setDragging(true);
     }
     moved.current = true;
-    setDrag(dx);
+    setDragOffset(dx);
   }
 
   function onPointerUp(e: React.PointerEvent) {
@@ -109,21 +147,14 @@ export default function Hero({ items }: { items: HeroItem[] }) {
     const dx = e.clientX - s.x;
     const speed = Math.abs(dx) / Math.max(1, performance.now() - s.t);
     setDragging(false);
-    setDrag(0);
-    if (Math.abs(dx) > SWIPE_PX || speed > SWIPE_SPEED) {
-      if (dx < 0) go(i + 1, 1);
-      else go(i - 1, -1);
-    }
+    setDragOffset(0);
+    if (Math.abs(dx) > SWIPE_PX || speed > SWIPE_SPEED) go(dx < 0 ? i + 1 : i - 1);
   }
-
-  const width = ref.current?.clientWidth ?? 1000;
-  const progress = Math.min(1, Math.abs(drag) / width);
 
   return (
     <section
       ref={ref}
       className={`hero ${dragging ? "is-dragging" : ""}`}
-      data-dir={dir === 1 ? "next" : "prev"}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onPointerDown={onPointerDown}
@@ -141,24 +172,18 @@ export default function Hero({ items }: { items: HeroItem[] }) {
       onDragStart={(e) => e.preventDefault()}
       aria-roledescription="carousel"
     >
-      {items.map((it, n) => (
-        <div
-          key={it.id}
-          className={`hero__bg ${n === i ? "is-active" : ""}`}
-          style={{
-            backgroundImage: `url(${it.banner})`,
-            // Parallax: the picture follows the finger more slowly than the text.
-            transform: n === i && drag ? `translateX(${drag * 0.25}px) scale(1.04)` : undefined,
-          }}
-          aria-hidden
-        />
-      ))}
+      <div className="hero__banner" ref={bannerRef} aria-hidden>
+        {items.map((it, n) => (
+          <div key={it.id} className={`hero__bg ${n === i ? "is-active" : ""}`}>
+            {seen.has(n) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={it.banner} alt="" decoding="async" fetchPriority={n === 0 ? "high" : "low"} draggable={false} />
+            ) : null}
+          </div>
+        ))}
+      </div>
       <div className="hero__shade" />
-      <div
-        className="hero__content"
-        key={cur.id}
-        style={drag ? { transform: `translateX(${drag * 0.6}px)`, opacity: 1 - progress * 1.4 } : undefined}
-      >
+      <div className="hero__content" key={cur.id} ref={contentRef}>
         {cur.logo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img className="hero__logo" src={cur.logo} alt={cur.title} draggable={false} />
@@ -196,10 +221,10 @@ export default function Hero({ items }: { items: HeroItem[] }) {
 
       {count > 1 ? (
         <>
-          <button className="hero__arrow hero__arrow--prev" onClick={() => go(i - 1, -1)} aria-label="Previous">
+          <button className="hero__arrow hero__arrow--prev" onClick={() => go(i - 1)} aria-label="Previous">
             <Icon name="prev" size={22} />
           </button>
-          <button className="hero__arrow hero__arrow--next" onClick={() => go(i + 1, 1)} aria-label="Next">
+          <button className="hero__arrow hero__arrow--next" onClick={() => go(i + 1)} aria-label="Next">
             <Icon name="next" size={22} />
           </button>
         </>
@@ -210,7 +235,7 @@ export default function Hero({ items }: { items: HeroItem[] }) {
           <button
             key={it.id}
             className={n === i ? "is-active" : ""}
-            onClick={() => go(n, n >= i ? 1 : -1)}
+            onClick={() => go(n)}
             aria-label={`Show ${it.title}`}
             aria-current={n === i}
           >
