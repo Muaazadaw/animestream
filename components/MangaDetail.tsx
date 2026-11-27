@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useChapters, type Chapter } from "@/lib/manga/client";
 import { getLists, isFavorite, setListStatus, STORAGE_EVENT, toggleFavorite, type ListEntry, type SavedAnime } from "@/lib/storage";
 import type { ListStatus } from "@/lib/state";
@@ -151,27 +151,96 @@ function when(iso: string | null) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** All readable chapters, with a number search and sort. */
+const RANGE = 100;
+const PER_PAGE = 24;
+
+/** Which block of 100 a chapter number falls in (1–100 → 0, 101–200 → 1…). */
+const rangeOf = (number: string) => Math.max(0, Math.floor((Math.floor(parseFloat(number) || 0) - 1) / RANGE));
+
+/** All readable chapters: a range dropdown (Ch. 1–100…), pages of 24, a number search and sort. */
 export function ChapterList({ mangaId }: { mangaId: number }) {
   const { chapters, error } = useChapters(mangaId);
   const { entry } = useEntry(mangaId);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"desc" | "asc" | "date">("desc");
-  const [limit, setLimit] = useState(100);
+  const [range, setRange] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const top = useRef<HTMLElement>(null);
+  const progress = entry?.progress ?? 0;
 
+  // Ranges that have chapters, e.g. [{ id: 2, label: "Ch. 201–300" }].
+  const ranges = useMemo(() => {
+    const byRange = new Map<number, number[]>();
+    for (const c of chapters ?? []) {
+      const r = rangeOf(c.number);
+      byRange.set(r, [...(byRange.get(r) ?? []), parseFloat(c.number) || 0]);
+    }
+    const list = [...byRange.entries()].map(([id, nums]) => ({
+      id,
+      label: `Ch. ${Math.floor(Math.min(...nums))}–${Math.floor(Math.max(...nums))}`,
+    }));
+    list.sort((a, b) => a.id - b.id);
+    return sort === "asc" ? list : list.reverse();
+  }, [chapters, sort]);
+
+  // Open on the range with your next chapter, or the newest one.
+  useEffect(() => {
+    if (!chapters?.length || range !== null) return;
+    const next = chapters.find((c) => parseFloat(c.number) > progress);
+    setRange(rangeOf((next ?? chapters[chapters.length - 1]).number));
+  }, [chapters, progress, range]);
+
+  const term = q.trim();
+  // Searching or sorting by date looks through every chapter; otherwise just the chosen range.
+  const useRanges = !term && sort !== "date" && ranges.length > 1;
   const shown = useMemo(() => {
     let list = [...(chapters ?? [])];
     if (sort === "desc") list.reverse();
     if (sort === "date") list.sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
-    const term = q.trim();
     if (term) list = list.filter((c) => c.number.startsWith(term) || c.title?.toLowerCase().includes(term.toLowerCase()));
+    else if (useRanges && range !== null) list = list.filter((c) => rangeOf(c.number) === range);
     return list;
-  }, [chapters, sort, q]);
+  }, [chapters, sort, term, useRanges, range]);
 
-  const progress = entry?.progress ?? 0;
+  const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
+  const current = Math.min(page, pages - 1);
+  const visible = shown.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
+
+  // Start from page 1 of whatever you switch to; open the page with your next chapter in a range.
+  useEffect(() => {
+    if (!useRanges || term) return setPage(0);
+    // Your next chapter is the lowest number above your progress, wherever the sort puts it.
+    const ahead = shown.filter((c) => parseFloat(c.number) > progress);
+    const next = ahead.reduce<Chapter | null>((m, c) => (!m || parseFloat(c.number) < parseFloat(m.number) ? c : m), null);
+    const i = progress && next ? shown.indexOf(next) : 0;
+    setPage(i > 0 ? Math.floor(i / PER_PAGE) : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, sort, term, useRanges]);
+
+  const goPage = (p: number) => {
+    setPage(p);
+    // Keep the list in view when the new page is shorter.
+    const el = top.current;
+    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const pager =
+    pages > 1 ? (
+      <div className="pager-pill">
+        <button disabled={current === 0} onClick={() => goPage(current - 1)} aria-label="Previous page">
+          <Icon name="prev" size={14} />
+        </button>
+        <span>
+          {current + 1} / {pages}
+        </span>
+        <button disabled={current >= pages - 1} onClick={() => goPage(current + 1)} aria-label="Next page">
+          <Icon name="next" size={14} />
+        </button>
+      </div>
+    ) : null;
 
   return (
-    <section className="chapters">
+    <section className="chapters" ref={top}>
       <div className="chapters__head">
         <h2>
           Chapters <span>{chapters?.length ?? ""}</span>
@@ -182,8 +251,17 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
             placeholder="Find chapter"
             inputMode="decimal"
             value={q}
-            onChange={(e) => (setQ(e.target.value), setLimit(100))}
+            onChange={(e) => setQ(e.target.value)}
           />
+          {useRanges ? (
+            <select className="select chapters__range" value={range ?? ""} onChange={(e) => setRange(Number(e.target.value))} aria-label="Chapter range">
+              {ranges.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <span className="chapters__lang">EN</span>
           <div className="mtabs">
             <button className={sort !== "date" ? "is-active" : ""} onClick={() => setSort(sort === "desc" ? "asc" : "desc")}>
@@ -220,7 +298,7 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
             ) : null;
           })()}
           <div className="chapters__list">
-            {shown.slice(0, limit).map((c) => {
+            {visible.map((c) => {
               const read = parseFloat(c.number) <= progress;
               return (
                 <Link key={c.id} href={`/manga/${mangaId}/read/${c.id}`} className={`chapter ${read ? "is-read" : ""}`}>
@@ -234,10 +312,13 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
               );
             })}
           </div>
-          {shown.length > limit ? (
-            <button className="btn btn--sm chapters__more" onClick={() => setLimit(limit + 200)}>
-              Show more ({shown.length - limit} left)
-            </button>
+          {pager ? (
+            <div className="chapters__foot">
+              <span className="muted">
+                {current * PER_PAGE + 1}–{Math.min(shown.length, (current + 1) * PER_PAGE)} of {shown.length}
+              </span>
+              {pager}
+            </div>
           ) : null}
         </>
       )}

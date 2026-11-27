@@ -1401,10 +1401,7 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 .chapters__search { width: 150px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; outline: 0; font-size: 13px; }
 .chapters__search:focus { border-color: var(--accent-2); }
 .chapters__lang { padding: 6px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); font-size: 12px; font-weight: 800; color: var(--muted); }
-.chapters__list {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 6px;
-  max-height: 620px; overflow-y: auto; padding-right: 4px;
-}
+.chapters__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 6px; }
 .chapter {
   display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center;
   padding: 10px 14px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); min-height: 56px;
@@ -1545,3 +1542,10 @@ body:has(.reader) .footer { display: none; }
 /* Manga: note about chapters Mayoi doesn't have */
 .mgap { margin: -2px 0 0; font-size: 13px; color: #e3c58f; }
 .chapters__gap { margin: 0 0 12px; }
+
+/* Manga: chapter ranges and pages */
+.chapters__range { height: 34px; padding: 0 30px 0 12px; font-size: 13px; font-weight: 700; }
+.chapters__foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; }
+.chapters__list .chapter { animation: chapter-in 0.25s ease both; }
+@keyframes chapter-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .chapters__list .chapter { animation: none; } }
