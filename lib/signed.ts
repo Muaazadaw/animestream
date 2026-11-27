@@ -29,8 +29,8 @@ export async function signValue(secret: string, payload: string, maxAgeSeconds: 
   return `${value}.${await hmac(secret, value)}`;
 }
 
-/** The payload if the signature is right and it hasn't expired, else null. */
-export async function verifyValue(secret: string, raw: string | undefined): Promise<string | null> {
+/** Payload and expiry (seconds) if the signature is right and it hasn't expired, else null. */
+export async function readValue(secret: string, raw: string | undefined): Promise<{ payload: string; exp: number } | null> {
   if (!raw) return null;
   const i = raw.lastIndexOf(".");
   if (i < 0) return null;
@@ -38,9 +38,30 @@ export async function verifyValue(secret: string, raw: string | undefined): Prom
   if (!same(raw.slice(i + 1), await hmac(secret, value))) return null;
   const j = value.lastIndexOf(".");
   const exp = Number(value.slice(j + 1));
-  return exp * 1000 > Date.now() ? value.slice(0, j) : null;
+  return exp * 1000 > Date.now() ? { payload: value.slice(0, j), exp } : null;
+}
+
+/** The payload if the signature is right and it hasn't expired, else null. */
+export async function verifyValue(secret: string, raw: string | undefined): Promise<string | null> {
+  return (await readValue(secret, raw))?.payload ?? null;
 }
 
 export const SESSION_COOKIE = "as_session";
+/**
+ * How long a login lasts: 400 days, the most browsers allow for a cookie. It's
+ * renewed on every visit (see middleware), so in practice people stay signed in
+ * until they log out.
+ */
+export const SESSION_MAX_AGE = 400 * 24 * 60 * 60;
+/** Renew the login once it's this old, so the cookie isn't re-sent on every request. */
+export const SESSION_RENEW_AFTER = 24 * 60 * 60;
+
+export const sessionCookieOptions = (secure: boolean) => ({
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure,
+  path: "/",
+  maxAge: SESSION_MAX_AGE,
+});
 /** Short-lived proof that an invite was entered; needed to create an account. */
 export const GATE_COOKIE = "as_gate";

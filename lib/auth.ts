@@ -7,9 +7,8 @@ import { cookies } from "next/headers";
 import { promisify } from "util";
 import { dbGet, dbSet } from "./db";
 import { inviteUsable, useInvite } from "./invites";
-import { GATE_COOKIE, SESSION_COOKIE, signValue, verifyValue } from "./signed";
+import { GATE_COOKIE, SESSION_COOKIE, SESSION_MAX_AGE, sessionCookieOptions, signValue, verifyValue } from "./signed";
 
-const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
 const scrypt = promisify(scryptCb) as (pw: string, salt: string, len: number) => Promise<Buffer>;
 
 type UserRecord = {
@@ -126,13 +125,11 @@ export async function signInWithAniList(viewer: AniListViewer): Promise<{ accoun
 }
 
 export async function startSession(name: string) {
-  (await cookies()).set(SESSION_COOKIE, await signValue(secret(), name, MAX_AGE), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: MAX_AGE,
-  });
+  (await cookies()).set(
+    SESSION_COOKIE,
+    await signValue(secret(), name, SESSION_MAX_AGE),
+    sessionCookieOptions(process.env.NODE_ENV === "production"),
+  );
 }
 
 export async function endSession() {
