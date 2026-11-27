@@ -169,13 +169,11 @@ function AccountSheet({ name, avatar, close }: { name: string; avatar?: string |
   const explore = manga
     ? [
         { href: "/manga", label: "Home", icon: "home" },
-        { href: "/search?type=manga&sort=TRENDING_DESC", label: "Trending", icon: "flame" },
         { href: "/search?type=manga", label: "Discover", icon: "compass" },
         { href: "/", label: "Switch to anime", icon: "play", mode: "anime" as const },
       ]
     : [
         { href: "/", label: "Home", icon: "home" },
-        { href: "/trending", label: "Trending", icon: "flame" },
         { href: "/search", label: "Discover", icon: "compass" },
         { href: "/schedule", label: "Schedule", icon: "calendar" },
         { href: "/manga", label: "Switch to manga", icon: "book", mode: "manga" as const },

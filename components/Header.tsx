@@ -12,14 +12,12 @@ import { Icon } from "./Menu";
 
 const NAV = [
   { href: "/", label: "Home", icon: "home" },
-  { href: "/trending", label: "Trending", icon: "flame" },
   { href: "/search", label: "Browse", icon: "compass" },
   { href: "/schedule", label: "Schedule", icon: "calendar" },
   { href: "/library", label: "My List", icon: "library" },
 ];
 const MANGA_NAV = [
   { href: "/manga", label: "Home", icon: "home" },
-  { href: "/search?type=manga&sort=TRENDING_DESC", label: "Trending", icon: "flame" },
   { href: "/search?type=manga", label: "Browse", icon: "compass" },
   { href: "/library", label: "My List", icon: "library" },
 ];
