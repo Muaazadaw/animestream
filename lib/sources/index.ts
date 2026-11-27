@@ -42,7 +42,8 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
  * Episode lists from every enabled provider. A failing or slow provider (e.g.
  * an API waking from a cold start) is skipped rather than holding up the page.
  */
-export async function episodesFor(anime: AnimeRef): Promise<ProviderEpisodes[]> {
+export async function episodesFor(anime: AnimeRef): Promise<ProviderEpisodes[] & { incomplete?: boolean }> {
+  let incomplete = false;
   const results = await Promise.all(
     enabledProviders().map(async (p) => {
       const base = { id: p.id, name: p.name, audio: p.audio ?? (["sub"] as Audio[]), tags: p.tags ?? [] };
@@ -50,11 +51,16 @@ export async function episodesFor(anime: AnimeRef): Promise<ProviderEpisodes[]> 
         return { ...base, episodes: await withTimeout(p.getEpisodes(anime), EPISODES_TIMEOUT_MS, p.id) };
       } catch (e) {
         console.error(`[sources] ${p.id} getEpisodes failed`, e);
+        incomplete = true;
         return { ...base, episodes: [] };
       }
     }),
   );
-  return results.filter((r) => r.episodes.length > 0);
+  // `incomplete`: a provider failed or timed out, so it may show up on a retry.
+  return Object.assign(
+    results.filter((r) => r.episodes.length > 0),
+    { incomplete },
+  );
 }
 
 export type { AnimeRef, Audio, EpisodeInfo, SourceProvider, Stream } from "./types";

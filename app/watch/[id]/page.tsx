@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import WhereToWatch from "@/components/WhereToWatch";
 import { getAnime, prettyEnum, titleOf } from "@/lib/anilist";
-import { getEpisodeMeta } from "@/lib/extras";
-import { episodesFor, toAnimeRef, withTimeout } from "@/lib/sources";
-import WatchClient, { type Season } from "./WatchClient";
+import type { Season } from "./WatchClient";
+import WatchLoader from "./WatchLoader";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -25,11 +22,11 @@ export default async function WatchPage({ params, searchParams }: Props) {
   if (!m) notFound();
 
   const title = titleOf(m.title);
-  // Episode titles/stills are nice to have: don't wait more than a few seconds for them.
-  const [providers, meta] = await Promise.all([
-    episodesFor(toAnimeRef(m)),
-    withTimeout(getEpisodeMeta(m), 4000, "episode details").catch(() => ({})),
-  ]);
+  const ep = Number(sp.ep) || 1;
+  // AniList's own still for this episode ("Episode 3 - Title"), if it has one.
+  const still = m.streamingEpisodes
+    .map((s) => ({ s, match: /^Episode\s+(\d+)\s*[-:]\s*(.+)$/i.exec(s.title) }))
+    .find((x) => x.match && Number(x.match[1]) === ep);
 
   // Prequels and sequels, in release order, around this entry.
   const seasons: Season[] = [
@@ -56,21 +53,8 @@ export default async function WatchPage({ params, searchParams }: Props) {
     .sort((a, b) => a.order - b.order || a.year - b.year)
     .map(({ year: _y, order: _o, ...s }) => s);
 
-  if (providers.length === 0) {
-    return (
-      <div className="container page">
-        <h1 className="page__title">{title}</h1>
-        <p className="empty">No episodes are available on this site for this title yet.</p>
-        <WhereToWatch links={m.externalLinks} />
-        <p>
-          <Link href={`/anime/${m.id}`}>← Back to details</Link>
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <WatchClient
+    <WatchLoader
       anime={{
         id: m.id,
         title,
@@ -79,9 +63,10 @@ export default async function WatchPage({ params, searchParams }: Props) {
         format: m.format,
         episodes: m.episodes,
       }}
-      providers={providers}
-      meta={meta}
       seasons={seasons}
+      externalLinks={m.externalLinks}
+      poster={still?.s.thumbnail ?? m.bannerImage ?? m.coverImage.extraLarge}
+      posterTitle={still?.match?.[2] ?? null}
       initialAudio={sp.audio === "dub" ? "dub" : sp.audio === "sub" ? "sub" : null}
       initialEp={Number(sp.ep) || null}
       initialSource={sp.source ?? null}

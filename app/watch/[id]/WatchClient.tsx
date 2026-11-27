@@ -104,9 +104,15 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
     if (idx >= 0) setChunk(Math.floor(idx / CHUNK));
   }, [idx]);
 
-  // Scroll the sidebar to the current episode.
+  // Scroll the episode list (only the list, never the page) to the current episode.
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest" });
+    const el = activeRef.current;
+    const list = el?.closest(".episodes__list") as HTMLElement | null;
+    if (!el || !list) return;
+    const top = el.offsetTop - list.offsetTop;
+    if (top < list.scrollTop || top + el.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTo({ top: top - list.clientHeight / 2 + el.offsetHeight / 2, behavior: mounted ? "smooth" : "auto" });
+    }
   }, [ep, mounted, view]);
 
   // Load the stream whenever episode, server or audio changes.
@@ -212,8 +218,19 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
               }
             />
           ) : (
-            <div className="player player--placeholder">
-              {loading ? <div className="spinner" /> : null}
+            <div
+              className="player player--placeholder player--poster"
+              style={{
+                backgroundImage: (currentMeta?.image ?? current?.thumbnail ?? anime.banner)
+                  ? `url(${currentMeta?.image ?? current?.thumbnail ?? anime.banner})`
+                  : undefined,
+              }}
+            >
+              {loading ? (
+                <span className="player__bigplay is-loading" aria-label="Loading">
+                  <Icon name="play" size={30} />
+                </span>
+              ) : null}
               {error ? (
                 <div className="player__error">
                   {error}
