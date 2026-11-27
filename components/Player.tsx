@@ -4,7 +4,7 @@ import Hls from "hls.js";
 import type Plyr from "plyr";
 import "plyr/dist/plyr.css";
 import { useEffect, useRef, useState } from "react";
-import { startAnime4K, type UpscaleMode } from "@/lib/anime4k";
+import { setUpscaleMode, startAnime4K, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
 import type { Stream } from "@/lib/sources/types";
 
 // Video player built on Plyr (controls, captions, settings, keyboard) with
@@ -61,6 +61,71 @@ function loadSubtitleSettings(): SubtitleSettings {
   }
 }
 
+const UPSCALE_NOTE: Record<UpscaleMode, string> = { off: "", A: "Sharp", B: "Soft", C: "Low-res" };
+
+/**
+ * Plyr has no API for extra settings, so this adds an "Anime4K" row to its ⚙ menu
+ * (styled like Quality / Speed) with its own Off / Mode A / B / C page.
+ */
+function addUpscaleMenu(root: HTMLElement) {
+  const container = root.querySelector<HTMLElement>(".plyr__menu__container");
+  const home = container?.querySelector<HTMLElement>('[id$="-home"]');
+  const homeMenu = home?.querySelector<HTMLElement>('[role="menu"]');
+  const panes = home?.parentElement;
+  if (!container || !home || !homeMenu || !panes || container.querySelector(".a4k-item")) return;
+
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "plyr__control plyr__control--forward a4k-item";
+  item.setAttribute("role", "menuitem");
+  item.setAttribute("aria-haspopup", "true");
+  item.innerHTML = `<span>Anime4K<span class="plyr__menu__value a4k-value"></span></span>`;
+  homeMenu.appendChild(item);
+
+  const pane = document.createElement("div");
+  pane.className = "a4k-pane";
+  pane.hidden = true;
+  pane.innerHTML =
+    `<button type="button" class="plyr__control plyr__control--back"><span aria-hidden="true">Anime4K</span>` +
+    `<span class="plyr__sr-only">Go back to previous menu</span></button><div role="menu"></div>`;
+  const list = pane.querySelector<HTMLElement>('[role="menu"]')!;
+  for (const m of UPSCALE_MODES) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "plyr__control";
+    b.setAttribute("role", "menuitemradio");
+    b.dataset.mode = m.id;
+    b.title = m.hint;
+    b.innerHTML = `<span>${m.label}<span class="plyr__menu__value">${UPSCALE_NOTE[m.id]}</span></span>`;
+    list.appendChild(b);
+  }
+  panes.appendChild(pane);
+
+  const show = (p: HTMLElement) => {
+    for (const c of Array.from(panes.children)) (c as HTMLElement).hidden = c !== p;
+  };
+  item.addEventListener("click", () => show(pane));
+  pane.querySelector(".plyr__control--back")!.addEventListener("click", () => show(home));
+  list.addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-mode]");
+    if (!b) return;
+    setUpscaleMode(b.dataset.mode as UpscaleMode);
+    show(home);
+  });
+  // Plyr only knows its own pages: start from the main page whenever the menu opens.
+  root.querySelector('[data-plyr="settings"]')?.addEventListener("click", () => {
+    pane.hidden = true;
+  });
+}
+
+/** Show the current mode next to "Anime4K" and tick it on its page. */
+function syncUpscaleMenu(root: HTMLElement | null | undefined, mode: UpscaleMode) {
+  if (!root) return;
+  const value = root.querySelector(".a4k-value");
+  if (value) value.textContent = UPSCALE_MODES.find((m) => m.id === mode)?.label ?? "Off";
+  root.querySelectorAll<HTMLElement>(".a4k-pane [data-mode]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === mode)));
+}
+
 function hexToRgba(hex: string, alpha: number) {
   const n = parseInt(hex.replace("#", ""), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
@@ -91,6 +156,9 @@ export default function Player({
   const [subs, setSubs] = useState<SubtitleSettings>(DEFAULT_SUBTITLE_SETTINGS);
   const [showSubs, setShowSubs] = useState(false);
   const [a4k, setA4k] = useState<{ on: boolean; error: string | null }>({ on: false, error: null });
+  const upscaleRef = useRef(upscale);
+  upscaleRef.current = upscale;
+  useEffect(() => syncUpscaleMenu(videoRef.current?.closest<HTMLElement>(".plyr"), upscale), [upscale]);
 
   const cb = useRef({ onProgress, onNext, autoSkip, autoplayNext, hasNext, stream });
   cb.current = { onProgress, onNext, autoSkip, autoplayNext, hasNext, stream };
@@ -247,6 +315,11 @@ export default function Player({
           : undefined,
       });
       plyrRef.current = plyr;
+      const root = video.closest<HTMLElement>(".plyr");
+      if (root) {
+        addUpscaleMenu(root);
+        syncUpscaleMenu(root, upscaleRef.current);
+      }
 
       video.addEventListener("loadedmetadata", resume, { once: true });
       if (video.readyState >= 1) resume();

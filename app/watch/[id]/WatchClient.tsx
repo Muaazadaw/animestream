@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Menu, { Icon, MenuItem } from "@/components/Menu";
 import Player from "@/components/Player";
-import { getUpscaleMode, setUpscaleMode, UPSCALE_EVENT, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
+import { getUpscaleMode, UPSCALE_EVENT, type UpscaleMode } from "@/lib/anime4k";
 import ListStatusMenu from "@/components/ListStatusMenu";
 import SideMediaList, { type SideMedia } from "@/components/SideMediaList";
 import type { EpisodeMeta } from "@/lib/extras";
@@ -366,16 +366,6 @@ export default function WatchClient({ anime, related, recommendations, providers
                     <label className="menu__toggle">
                       Auto-skip intro/outro
                       <input type="checkbox" checked={prefs.autoSkip} onChange={(e) => updatePrefs({ autoSkip: e.target.checked })} />
-                    </label>
-                    <label className="menu__toggle" title={UPSCALE_MODES.find((m) => m.id === upscale)?.hint}>
-                      Anime4K upscaling
-                      <select className="select" value={upscale} onChange={(e) => setUpscaleMode(e.target.value as UpscaleMode)}>
-                        {UPSCALE_MODES.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </select>
                     </label>
                     <label className="menu__toggle">
                       Hide spoilers
