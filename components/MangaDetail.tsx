@@ -215,7 +215,7 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
             const missing = last - chapters.filter((c) => Number.isInteger(parseFloat(c.number)) && parseFloat(c.number) >= 1).length;
             return missing > 0 ? (
               <p className="mgap chapters__gap">
-                Mayoi has {chapters.length} of {last}+ chapters for this one. The rest aren&apos;t available on MangaDex in English.
+                Mayoi has {chapters.length} of {last}+ chapters for this one. The rest aren&apos;t available in English yet.
               </p>
             ) : null;
           })()}

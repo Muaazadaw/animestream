@@ -1,9 +1,21 @@
 import { NextResponse } from "next/server";
 import { getChapterPages } from "@/lib/manga/mangadex";
+import { CHAPTER_ID as MANGAKATANA_ID, getChapterPages as getMangaKatanaPages } from "@/lib/manga/mangakatana";
 
-// GET /api/manga/pages?chapter=<MangaDex chapter id> → { pages, saver }
+// GET /api/manga/pages?chapter=<MangaDex chapter id | mk-<id>-<chapter>> → { pages, saver }
 export async function GET(req: Request) {
   const chapter = new URL(req.url).searchParams.get("chapter") ?? "";
+
+  if (MANGAKATANA_ID.test(chapter)) {
+    const mk = await getMangaKatanaPages(chapter);
+    if (!mk) return NextResponse.json({ error: "Couldn't load this chapter" }, { status: 404 });
+    // MangaKatana has no data-saver images, so both lists are the same.
+    return NextResponse.json(
+      { pages: mk.pages, saver: mk.pages, number: mk.number, group: null },
+      { headers: { "Cache-Control": "public, s-maxage=300" } },
+    );
+  }
+
   if (!/^[0-9a-f-]{36}$/i.test(chapter)) return NextResponse.json({ error: "Invalid chapter" }, { status: 400 });
 
   const pages = await getChapterPages(chapter);
