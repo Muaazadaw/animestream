@@ -3,13 +3,23 @@ import { ContinueReading, LatestChapters, TabbedShelf, type LatestItem } from "@
 import Row from "@/components/Row";
 import AnimeCard from "@/components/AnimeCard";
 import { getMangaHome, getMediaByIds } from "@/lib/anilist";
-import { getLatestChapters } from "@/lib/manga/mangadex";
+import { getLatestChapters, type LatestChapter } from "@/lib/manga/mangadex";
+import { getLatestChapters as getMangaKatanaLatest } from "@/lib/manga/mangakatana";
 
 export const metadata: Metadata = { title: "Manga" };
 export const revalidate = 300;
 
 export default async function MangaHomePage() {
-  const [home, latest] = await Promise.all([getMangaHome(), getLatestChapters(63).catch(() => [])]);
+  const [home, mangadex, mangakatana] = await Promise.all([
+    getMangaHome(),
+    getLatestChapters(63).catch(() => []),
+    getMangaKatanaLatest().catch((e) => (console.error("[manga] mangakatana latest", e), [] as LatestChapter[])),
+  ]);
+  // Newest first, one entry per manga across both sources.
+  const seen = new Set<number>();
+  const latest = [...mangadex, ...mangakatana]
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .filter((l) => !seen.has(l.anilistId) && !!seen.add(l.anilistId));
   const cards = await getMediaByIds(latest.map((l) => l.anilistId)).catch(() => []);
   const byId = new Map(cards.map((c) => [c.id, c]));
   const latestItems: LatestItem[] = latest

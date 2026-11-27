@@ -2,8 +2,8 @@
 // fill in chapters MangaDex doesn't host. Ported from the mangal Lua scraper.
 // A manga is matched to AniList by title. Server only.
 
-import type { MediaTitle } from "../anilist";
-import type { Chapter } from "./mangadex";
+import { searchMangaTitle, type MediaTitle } from "../anilist";
+import type { Chapter, LatestChapter } from "./mangadex";
 
 const BASE = "https://mangakatana.com";
 const HEADERS = {
@@ -84,6 +84,63 @@ export async function getChapters(title: MediaTitle): Promise<Chapter[]> {
     });
   }
   return chapters.reverse();
+}
+
+// "26 minutes ago", "3 hours ago", or a date like "Nov-20-2026".
+function updatedAt(text: string, now: number): string | null {
+  const rel = text.match(/(\d+)\s+(second|minute|hour|day|week|month)s?\s+ago/i);
+  if (rel) {
+    const unit = { second: 1, minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000 }[rel[2].toLowerCase()]!;
+    return new Date(now - Number(rel[1]) * unit * 1000).toISOString();
+  }
+  const date = new Date(`${text.replace(/-/g, " ")} UTC`);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+// MangaKatana title → AniList id (null: no exact match), remembered for this server's life.
+const matched = new Map<string, number | null>();
+// New AniList lookups allowed per call. AniList allows 30 a minute across the whole site,
+// so a cold cache fills in over a few page loads instead of all at once.
+const LOOKUPS_PER_CALL = 10;
+
+/** Newest chapters from MangaKatana's latest-updates pages, one per manga, for manga matched to AniList by exact title. */
+export async function getLatestChapters(pages = 10): Promise<LatestChapter[]> {
+  const now = Date.now();
+  const htmls = await Promise.all(Array.from({ length: pages }, (_, i) => page(i ? `${BASE}/page/${i + 1}` : BASE, 300)));
+  const items: { title: string; chapterId: string; number: string; at: string }[] = [];
+  for (const res of htmls) {
+    const list = res?.html.match(/id="book_list"[\s\S]*?id="col_right"/)?.[0] ?? "";
+    for (const item of list.split('<div class="item"').slice(1)) {
+      const id = item.match(/data-id="(\d+)"/)?.[1];
+      const title = item.match(/<h3 class="title">\s*<a [^>]*>([^<]+)<\/a>/)?.[1];
+      const path = item.match(/<div class="chapter"><a href="[^"]+\/(c[\w.-]+)"/)?.[1];
+      const at = updatedAt(item.match(/<div class="date">(?:<i[^>]*><\/i>)?([^<]+)/)?.[1] ?? "", now);
+      if (id && title && path && at) items.push({ title: decode(title), chapterId: `mk-${id}-${path}`, number: path.slice(1), at });
+    }
+  }
+
+  // Unknown titles are looked up one at a time, newest first, until the budget runs out
+  // or AniList refuses; the rest wait for a later call.
+  let budget = LOOKUPS_PER_CALL;
+  const seen = new Set<number>();
+  const out: LatestChapter[] = [];
+  for (const item of items) {
+    if (!matched.has(item.title)) {
+      if (budget-- <= 0) continue;
+      const hits = await searchMangaTitle(item.title).catch(() => null);
+      if (!hits) {
+        budget = 0;
+        continue;
+      }
+      const want = norm(item.title);
+      matched.set(item.title, hits.find((m) => m.names.some((n) => norm(n) === want))?.id ?? null);
+    }
+    const id = matched.get(item.title);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ anilistId: id, number: item.number, chapterId: item.chapterId, at: item.at });
+  }
+  return out;
 }
 
 /** Page image URLs for a MangaKatana chapter id. */
