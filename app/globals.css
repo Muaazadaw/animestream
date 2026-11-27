@@ -1889,3 +1889,9 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 /* Footer: version and update count */
 .footer__ver { margin-top: 6px; font-size: 12px; color: #6f6f7c; }
 .footer__ver span { padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Info links to MyAnimeList, AniList… */
+.infolinks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.infolinks a { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); transition: border-color 0.15s, transform 0.15s; }
+.infolinks a:hover { border-color: var(--accent-2); transform: translateY(-1px); }
+.infolinks img { width: 20px; height: 20px; border-radius: 4px; }

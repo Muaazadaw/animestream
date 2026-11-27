@@ -3,9 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AnimeCard from "@/components/AnimeCard";
 import Characters from "@/components/Characters";
+import InfoLinks from "@/components/InfoLinks";
 import { ChapterList, MangaActions, ReadMore } from "@/components/MangaDetail";
 import Row from "@/components/Row";
-import { getCharacters } from "@/lib/extras";
+import { getCharacters, getMangaSiteIds } from "@/lib/extras";
 import { getManga, plainText, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
 
 type Props = { params: Promise<{ id: string }> };
@@ -26,7 +27,10 @@ export default async function MangaPage({ params }: Props) {
   const m = await getManga(id);
   if (!m) notFound();
 
-  const characters = await getCharacters(m.id).catch(() => []);
+  const [characters, siteIds] = await Promise.all([
+    getCharacters(m.id).catch(() => []),
+    getMangaSiteIds(m.idMal).catch(() => ({ mal: m.idMal ?? null })),
+  ]);
   const title = titleOf(m.title);
   const staff = m.staff?.edges ?? [];
   const author = staffFor(staff, /story/i);
@@ -83,6 +87,7 @@ export default async function MangaPage({ params }: Props) {
             ))}
           </div>
           <ReadMore text={plainText(m.description)} />
+          <InfoLinks kind="manga" id={m.id} title={title} ids={siteIds} />
         </div>
         <aside className="facts">
           {facts

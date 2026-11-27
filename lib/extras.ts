@@ -31,7 +31,11 @@ type AniZip = {
     }
   >;
   images?: { coverType?: string; url?: string }[];
+  mappings?: { mal_id?: number | null; kitsu_id?: number | null; anidb_id?: number | null; animeplanet_id?: string | number | null };
 };
+
+/** The same show or manga's id on other database sites, where known. */
+export type SiteIds = { mal?: number | null; kitsu?: number | null; anidb?: number | null; animeplanet?: string | null };
 
 async function aniZip(id: number): Promise<AniZip | null> {
   try {
@@ -40,6 +44,29 @@ async function aniZip(id: number): Promise<AniZip | null> {
   } catch {
     return null;
   }
+}
+
+/** Anime ids on MyAnimeList, Kitsu, AniDB and Anime-Planet (from ani.zip's mappings). */
+export async function getSiteIds(id: number, idMal?: number | null): Promise<SiteIds> {
+  const m = (await aniZip(id))?.mappings;
+  return {
+    mal: m?.mal_id ?? idMal ?? null,
+    kitsu: m?.kitsu_id ?? null,
+    anidb: m?.anidb_id ?? null,
+    animeplanet: m?.animeplanet_id != null ? String(m.animeplanet_id) : null,
+  };
+}
+
+/** Manga ids on MyAnimeList and Kitsu (Kitsu looked up through the MyAnimeList id). */
+export async function getMangaSiteIds(idMal?: number | null): Promise<SiteIds> {
+  if (!idMal) return {};
+  const res = await fetch(
+    `https://kitsu.io/api/edge/mappings?filter[externalSite]=myanimelist/manga&filter[externalId]=${idMal}&include=item`,
+    { headers: { Accept: "application/vnd.api+json" }, next: { revalidate: 86400 } },
+  ).catch(() => null);
+  const data = res?.ok ? ((await res.json().catch(() => null)) as { included?: { type: string; id: string }[] } | null) : null;
+  const kitsu = Number(data?.included?.find((i) => i.type === "manga")?.id) || null;
+  return { mal: idMal, kitsu };
 }
 
 /**

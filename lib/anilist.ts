@@ -32,6 +32,7 @@ export type MediaCard = {
 export type ExternalLink = { url: string; site: string; type: string | null; icon: string | null; color: string | null };
 
 export type MediaDetail = MediaCard & {
+  idMal?: number | null;
   volumes?: number | null;
   duration: number | null;
   season: string | null;
@@ -194,6 +195,24 @@ export async function getMediaByIds(ids: number[]): Promise<MediaCard[]> {
     for (const m of data.Page.media) if (!m.isAdult) out.set(m.id, m);
   }
   return ids.map((id) => out.get(id)).filter((m): m is MediaCard => !!m);
+}
+
+/**
+ * The closest few AniList manga for a title, with every name they go by. One title per
+ * request so each is cached on its own for a week: AniList counts every search against
+ * its per-minute limit, so only titles not seen before should cost anything.
+ */
+export async function searchMangaTitle(title: string): Promise<{ id: number; names: string[] }[]> {
+  type Hit = { id: number; title: Omit<MediaTitle, "userPreferred">; synonyms: string[] };
+  const data = await query<{ Page: { media: Hit[] } }>(
+    `query ($s: String) { Page(perPage: 3) { media(search: $s, type: MANGA) { id title { romaji english native } synonyms } } }`,
+    { s: title },
+    604800,
+  );
+  return data.Page.media.map((m) => ({
+    id: m.id,
+    names: [m.title.romaji, m.title.english, m.title.native, ...(m.synonyms ?? [])].filter((n): n is string => !!n),
+  }));
 }
 
 /** Rows for the manga home page. */
@@ -369,6 +388,7 @@ async function getMedia(id: number, type: MediaType): Promise<MediaDetail | null
     `query ($id: Int, $type: MediaType) {
       Media(id: $id, type: $type) {
         ${CARD_FIELDS}
+        idMal
         volumes
         description(asHtml: false)
         duration

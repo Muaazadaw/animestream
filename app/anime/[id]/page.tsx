@@ -8,7 +8,8 @@ import Countdown from "@/components/Countdown";
 import Row from "@/components/Row";
 import Trailer from "@/components/Trailer";
 import WatchlistButton from "@/components/WatchlistButton";
-import { getArtwork, getCharacters, getEpisodeMeta } from "@/lib/extras";
+import InfoLinks from "@/components/InfoLinks";
+import { getArtwork, getCharacters, getEpisodeMeta, getSiteIds } from "@/lib/extras";
 import { airedEpisodes, getAnime, plainText, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
 
 type Props = { params: Promise<{ id: string }> };
@@ -24,9 +25,10 @@ export default async function AnimePage({ params }: Props) {
   const m = await getAnime(id);
   if (!m) notFound();
 
-  const [characters, artwork] = await Promise.all([
+  const [characters, artwork, siteIds] = await Promise.all([
     getCharacters(m.id),
     getEpisodeMeta(m).then((eps) => getArtwork(m, eps)),
+    getSiteIds(m.id, m.idMal).catch(() => ({ mal: m.idMal ?? null })),
   ]);
   const title = titleOf(m.title);
   const aired = airedEpisodes(m);
@@ -101,6 +103,7 @@ export default async function AnimePage({ params }: Props) {
             />
           </div>
           <p className="detail__desc">{plainText(m.description)}</p>
+          <InfoLinks kind="anime" id={m.id} title={title} ids={siteIds} />
         </div>
         <aside className="facts">
           {facts
