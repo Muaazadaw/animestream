@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Menu, { Icon, MenuItem } from "@/components/Menu";
 import Player from "@/components/Player";
+import WatchlistButton from "@/components/WatchlistButton";
 import type { EpisodeMeta } from "@/lib/extras";
 import type { ProviderEpisodes } from "@/lib/sources";
 import type { EpisodeInfo, Stream } from "@/lib/sources/types";
@@ -245,12 +246,23 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
             </div>
 
             <div className="watch__actions">
-              <button className="icon-btn" disabled={!prev} onClick={() => prev && setEp(prev.number)} title="Previous episode">
-                <Icon name="prev" />
-              </button>
-              <button className="icon-btn" disabled={!next} onClick={() => next && setEp(next.number)} title="Next episode">
-                <Icon name="next" />
-              </button>
+              <div className="watch__epnav">
+                <button className="icon-btn" disabled={!prev} onClick={() => prev && setEp(prev.number)} title="Previous episode">
+                  <Icon name="prev" />
+                  {prev ? <span className="watch__eplabel">Ep {prev.number}</span> : null}
+                </button>
+                <button
+                  className="icon-btn watch__epsbtn"
+                  onClick={() => document.querySelector(".side")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                >
+                  <Icon name="list" /> Episodes
+                </button>
+                <button className="icon-btn" disabled={!next} onClick={() => next && setEp(next.number)} title="Next episode">
+                  {next ? <span className="watch__eplabel">Ep {next.number}</span> : null}
+                  <Icon name="next" />
+                </button>
+              </div>
+              <div className="watch__menus">
 
               <Menu
                 up
@@ -325,7 +337,7 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                 }
               </Menu>
 
-              <Menu up align="right" heading="Playback" label={<Icon name="dots" />} className="menu--icon">
+              <Menu up align="right" heading="Playback" label={<Icon name="dots" />} className="menu--icon watch__more">
                 {() => (
                   <>
                     <label className="menu__toggle">
@@ -347,10 +359,28 @@ export default function WatchClient({ anime, providers, meta, seasons, initialEp
                   </>
                 )}
               </Menu>
+              </div>
             </div>
           </div>
 
           {currentMeta?.overview && !isSpoiler(ep) ? <p className="watch__overview">{currentMeta.overview}</p> : null}
+
+          {/* Phones: the show under the player, like the detail page header. */}
+          <div className="watch__card">
+            <Link href={`/anime/${anime.id}`} className="watch__cardlink">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={anime.cover ?? undefined} alt="" />
+              <span>
+                <strong>{anime.title}</strong>
+                <em>
+                  {[anime.format?.replace(/_/g, " "), anime.episodes ? `${anime.episodes} eps` : null].filter(Boolean).join(" · ")}
+                </em>
+              </span>
+            </Link>
+            <WatchlistButton
+              anime={{ id: anime.id, title: anime.title, cover: anime.cover, format: anime.format, episodes: anime.episodes }}
+            />
+          </div>
         </div>
 
         <aside className="side">
