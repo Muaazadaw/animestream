@@ -45,6 +45,22 @@ export async function dbGet<T>(key: string): Promise<T | null> {
   return ((await loadFile())[key] as T) ?? null;
 }
 
+export async function dbDel(key: string): Promise<void> {
+  if (REST_URL && REST_TOKEN) {
+    await redis(["DEL", key]);
+    return;
+  }
+  const run = queue.then(async () => {
+    const data = await loadFile();
+    delete data[key];
+    await fs.mkdir(path.dirname(FILE), { recursive: true });
+    await fs.writeFile(FILE + ".tmp", JSON.stringify(data));
+    await fs.rename(FILE + ".tmp", FILE);
+  });
+  queue = run.catch(() => {});
+  await run;
+}
+
 export async function dbSet(key: string, value: unknown): Promise<void> {
   if (REST_URL && REST_TOKEN) {
     await redis(["SET", key, JSON.stringify(value)]);

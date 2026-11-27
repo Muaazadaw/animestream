@@ -1,13 +1,17 @@
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
+import { ADMIN_ACCOUNT, deleteAccount, listAccounts, resetPassword, startSession } from "@/lib/auth";
 import { createInvite, listInvites, revokeInvite } from "@/lib/invites";
 
-// Invite management for the site owner. Every request needs the
+// Invites and accounts, for the site owner. Every request needs the
 // x-admin-password header to match ADMIN_PASSWORD (set only in Vercel).
 //
-// GET                                  → { invites }
-// POST   { note?, maxUses? }           → { invite, password }   (password is shown once)
-// DELETE { user }                      → revokes that invite
+// GET                                         → { invites, accounts }
+// POST   { note?, maxUses? }                  → { invite, password }
+// POST   { action: "login" }                  → signs this browser in as the admin account
+// POST   { action: "reset-password", name }   → { password }   (shown once)
+// POST   { action: "delete-account", name }   → deletes the account and its library
+// DELETE { user }                             → revokes that invite
 
 function authorized(req: Request): boolean {
   const expected = process.env.ADMIN_PASSWORD ?? "";
@@ -27,12 +31,29 @@ function denied() {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return denied();
-  return NextResponse.json({ invites: await listInvites() });
+  const [invites, accounts] = await Promise.all([listInvites(), listAccounts()]);
+  return NextResponse.json({ invites, accounts });
 }
 
 export async function POST(req: Request) {
   if (!authorized(req)) return denied();
-  const body = (await req.json().catch(() => ({}))) as { note?: string; maxUses?: number };
+  const body = (await req.json().catch(() => ({}))) as { action?: string; name?: string; note?: string; maxUses?: number };
+
+  if (body.action === "login") {
+    if (!process.env.AUTH_SECRET) return NextResponse.json({ error: "AUTH_SECRET isn't set on the server." }, { status: 500 });
+    await startSession(ADMIN_ACCOUNT);
+    return NextResponse.json({ user: ADMIN_ACCOUNT });
+  }
+  if (body.action === "reset-password") {
+    const password = body.name ? await resetPassword(body.name) : null;
+    if (!password) return NextResponse.json({ error: "Only username accounts have a password to reset." }, { status: 400 });
+    return NextResponse.json({ password });
+  }
+  if (body.action === "delete-account") {
+    if (!body.name || !(await deleteAccount(body.name))) return NextResponse.json({ error: "No such account." }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json(await createInvite(body.note ?? "", Number(body.maxUses) || 1));
 }
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { LogoMark } from "@/components/Logo";
+import type { AccountSummary } from "@/lib/auth";
 import type { InviteSummary } from "@/lib/invites";
 
 const KEY = "as:admin-pass";
@@ -10,7 +11,9 @@ const KEY = "as:admin-pass";
 export default function AdminPage() {
   const [pass, setPass] = useState("");
   const [authed, setAuthed] = useState(false);
-  const [invites, setInvites] = useState<InviteSummary[]>([]);
+  const [invites, setInvites] = useState<(InviteSummary & { password?: string })[]>([]);
+  const [accounts, setAccounts] = useState<AccountSummary[]>([]);
+  const [reset, setReset] = useState<{ name: string; password: string } | null>(null);
   const [note, setNote] = useState("");
   const [maxUses, setMaxUses] = useState(1);
   const [created, setCreated] = useState<{ user: string; password: string } | null>(null);
@@ -33,8 +36,9 @@ export default function AdminPage() {
 
   const load = useCallback(
     async (password = pass) => {
-      const d = (await call("GET", undefined, password)) as { invites: InviteSummary[] };
+      const d = (await call("GET", undefined, password)) as { invites: InviteSummary[]; accounts: AccountSummary[] };
       setInvites(d.invites);
+      setAccounts(d.accounts ?? []);
       setAuthed(true);
       try {
         sessionStorage.setItem(KEY, password);
@@ -87,6 +91,34 @@ export default function AdminPage() {
     await load().catch(() => {});
   }
 
+  async function removeAccount(name: string) {
+    if (!confirm(`Delete the account "${name}"? Their list and history on Mayoi are deleted and they're signed out everywhere. This can't be undone.`)) return;
+    setError(null);
+    await call("POST", { action: "delete-account", name }).catch((err: Error) => setError(err.message));
+    await load().catch(() => {});
+  }
+
+  async function resetAccount(name: string) {
+    if (!confirm(`Give "${name}" a new password? Their old one stops working.`)) return;
+    setError(null);
+    try {
+      const d = (await call("POST", { action: "reset-password", name })) as { password: string };
+      setReset({ name, password: d.password });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function openAsAdmin() {
+    setError(null);
+    try {
+      await call("POST", { action: "login" });
+      window.location.href = "/";
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   if (!authed) {
     return (
       <div className="gate">
@@ -108,7 +140,10 @@ export default function AdminPage() {
     <div className="admin">
       <header className="admin__head">
         <LogoMark size={36} />
-        <h1>Mayoi invites</h1>
+        <h1>Mayoi admin</h1>
+        <button className="sbtn sbtn--primary" onClick={openAsAdmin}>
+          Open site as admin
+        </button>
         <button
           className="sbtn"
           onClick={() => {
@@ -136,7 +171,7 @@ export default function AdminPage() {
 
       {created ? (
         <div className="admin__new">
-          <strong>New invite — copy it now, the password won&apos;t be shown again.</strong>
+          <strong>New invite — it&apos;s also listed below.</strong>
           <div className="admin__creds">
             <span>
               Username <code>{created.user}</code>
@@ -162,6 +197,7 @@ export default function AdminPage() {
         <thead>
           <tr>
             <th>Invite</th>
+            <th>Password</th>
             <th>Note</th>
             <th>Used</th>
             <th>Accounts</th>
@@ -172,7 +208,7 @@ export default function AdminPage() {
         <tbody>
           {invites.length === 0 ? (
             <tr>
-              <td colSpan={6} className="muted">
+              <td colSpan={7} className="muted">
                 No invites yet.
               </td>
             </tr>
@@ -182,6 +218,7 @@ export default function AdminPage() {
               <td>
                 <code>{i.user}</code>
               </td>
+              <td>{i.password ? <code>{i.password}</code> : <span className="muted" title="Made before passwords were kept">—</span>}</td>
               <td>{i.note || "—"}</td>
               <td>
                 {i.revoked ? "Revoked" : `${i.usedBy.length} / ${i.maxUses}`}
@@ -194,6 +231,65 @@ export default function AdminPage() {
                     Revoke
                   </button>
                 ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2 className="admin__h2">Accounts</h2>
+      {reset ? (
+        <div className="admin__new">
+          <strong>New password for {reset.name}. Copy it now: it won&apos;t be shown again.</strong>
+          <div className="admin__creds">
+            <span>
+              Password <code>{reset.password}</code>
+            </span>
+            <button className="sbtn" onClick={() => navigator.clipboard?.writeText(reset.password)}>
+              Copy
+            </button>
+            <button className="sbtn" onClick={() => setReset(null)}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <table className="admin__table">
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Sign-in</th>
+            <th>Invite</th>
+            <th>Created</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {accounts.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="muted">
+                No accounts yet.
+              </td>
+            </tr>
+          ) : null}
+          {accounts.map((a) => (
+            <tr key={a.name}>
+              <td>
+                <strong>{a.display ?? a.name}</strong>
+                {a.display ? <span className="muted"> · {a.name}</span> : null}
+              </td>
+              <td>{a.kind === "local" ? "Username + password" : "AniList"}</td>
+              <td>{a.invite ? <code>{a.invite}</code> : "—"}</td>
+              <td>{a.createdAt ? new Date(a.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}</td>
+              <td className="admin__actions">
+                {a.kind === "local" ? (
+                  <button className="sbtn" onClick={() => resetAccount(a.name)}>
+                    Reset password
+                  </button>
+                ) : null}
+                <button className="sbtn sbtn--danger" onClick={() => removeAccount(a.name)}>
+                  Delete
+                </button>
               </td>
             </tr>
           ))}

@@ -1535,3 +1535,9 @@ body:has(.reader) .footer { display: none; }
   .watch__card .btn { padding: 8px 12px; font-size: 13px; flex-shrink: 0; }
   .watch__layout { gap: 18px; }
 }
+
+/* Admin: accounts */
+.admin__h2 { font-size: 17px; margin: 28px 0 12px; }
+.admin__actions { display: flex; gap: 8px; justify-content: flex-end; }
+.admin__table { display: block; overflow-x: auto; }
+@media (min-width: 761px) { .admin__table { display: table; } }

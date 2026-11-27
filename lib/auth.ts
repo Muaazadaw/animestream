@@ -5,8 +5,8 @@
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { promisify } from "util";
-import { dbGet, dbSet } from "./db";
-import { inviteUsable, useInvite } from "./invites";
+import { dbDel, dbGet, dbSet } from "./db";
+import { inviteUsable, listInvites, useInvite } from "./invites";
 import { GATE_COOKIE, SESSION_COOKIE, SESSION_MAX_AGE, sessionCookieOptions, signValue, verifyValue } from "./signed";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: string, len: number) => Promise<Buffer>;
@@ -34,19 +34,38 @@ function secret(): string {
   return s;
 }
 
+/** The owner's own account, signed in from /admin with ADMIN_PASSWORD (for testing the site). */
+export const ADMIN_ACCOUNT = "admin";
+const USERS_INDEX = "users:index";
+
+async function indexUser(name: string) {
+  const all = (await dbGet<string[]>(USERS_INDEX)) ?? [];
+  if (!all.includes(name)) await dbSet(USERS_INDEX, [name, ...all]);
+}
+
 export function normalizeName(name: string) {
   return name.trim().toLowerCase();
 }
 
 /** 3–24 letters, numbers, _ or -; "al" + digits is reserved for AniList accounts. */
 export function validName(name: string) {
-  return /^[a-z0-9_-]{3,24}$/.test(name) && !/^al\d+$/.test(name);
+  return /^[a-z0-9_-]{3,24}$/.test(name) && !/^al\d+$/.test(name) && name !== ADMIN_ACCOUNT;
 }
 
 /** The invite entered on this browser in the last hour, if it still has uses left. */
 async function enteredInvite(): Promise<string | null> {
   const invite = await verifyValue(secret(), (await cookies()).get(GATE_COOKIE)?.value);
   return invite && (await inviteUsable(invite)) ? invite : null;
+}
+
+/** True for the owner's sign-in (ADMIN_USER + ADMIN_PASSWORD from the environment). */
+export async function isAdminLogin(name: string, password: string): Promise<boolean> {
+  const user = (process.env.ADMIN_USER ?? "").trim().toLowerCase();
+  const expected = process.env.ADMIN_PASSWORD ?? "";
+  if (!user || expected.length < 12 || name !== user) return false;
+  // Compare hashes so the check takes the same time whatever was typed.
+  const [a, b] = await Promise.all([scrypt(password, "admin-login", 32), scrypt(expected, "admin-login", 32)]);
+  return timingSafeEqual(a, b);
 }
 
 /** Create a local account with the invite just entered, and sign in. Returns an error message or null. */
@@ -58,6 +77,7 @@ export async function createLocalAccount(name: string, password: string): Promis
   const hash = (await scrypt(password, salt, 64)).toString("hex");
   await dbSet(`user:${name}`, { name, createdAt: Date.now(), invite, salt, hash } satisfies UserRecord);
   await useInvite(invite, name);
+  await indexUser(name);
   (await cookies()).delete(GATE_COOKIE);
   await startSession(name);
   return null;
@@ -87,6 +107,7 @@ export async function viewerFromToken(token: string): Promise<AniListViewer | nu
 }
 
 export async function userInfo(name: string): Promise<{ createdAt: number | null; display: string | null; avatar: string | null }> {
+  if (name === ADMIN_ACCOUNT) return { createdAt: null, display: "Admin", avatar: null };
   const u = await dbGet<UserRecord>(`user:${name}`);
   return { createdAt: u?.createdAt ?? null, display: u?.display ?? null, avatar: u?.avatar ?? null };
 }
@@ -103,7 +124,7 @@ export async function signInWithAniList(viewer: AniListViewer): Promise<{ accoun
 
   if (!account) {
     const current = await currentUser();
-    if (current) {
+    if (current && current !== ADMIN_ACCOUNT) {
       account = current;
     } else {
       const invite = await enteredInvite();
@@ -113,6 +134,7 @@ export async function signInWithAniList(viewer: AniListViewer): Promise<{ accoun
       account = `al${viewer.id}`;
       await dbSet(`user:${account}`, { name: account, createdAt: Date.now(), invite } satisfies UserRecord);
       await useInvite(invite, account);
+      await indexUser(account);
       jar.delete(GATE_COOKIE);
     }
     await dbSet(linkKey, account);
@@ -136,8 +158,72 @@ export async function endSession() {
   (await cookies()).delete(SESSION_COOKIE);
 }
 
-/** The signed-in account name, or null. */
-export async function currentUser(): Promise<string | null> {
+/** The name in this browser's login cookie, whether or not the account still exists. */
+async function sessionName(): Promise<string | null> {
   if (!process.env.AUTH_SECRET) return null;
   return verifyValue(secret(), (await cookies()).get(SESSION_COOKIE)?.value);
+}
+
+/** The signed-in account name, or null. An account the owner deleted counts as signed out. */
+export async function currentUser(): Promise<string | null> {
+  const name = await sessionName();
+  if (!name) return null;
+  if (name === ADMIN_ACCOUNT) return name;
+  return (await dbGet(`user:${name}`)) ? name : null;
+}
+
+/** True if this browser is signed in to an account that has since been deleted. */
+export async function sessionRemoved(): Promise<boolean> {
+  const name = await sessionName();
+  return !!name && name !== ADMIN_ACCOUNT && !(await dbGet(`user:${name}`));
+}
+
+export type AccountSummary = {
+  name: string;
+  kind: "local" | "anilist";
+  /** AniList name for AniList accounts. */
+  display: string | null;
+  invite: string | null;
+  createdAt: number | null;
+};
+
+/** Every account: the ones recorded at sign-up plus any listed on an invite. */
+export async function listAccounts(): Promise<AccountSummary[]> {
+  const names = new Set((await dbGet<string[]>(USERS_INDEX)) ?? []);
+  for (const i of await listInvites()) for (const u of i.usedBy) names.add(u);
+  const users = await Promise.all([...names].map((n) => dbGet<UserRecord>(`user:${n}`)));
+  return users
+    .filter((u): u is UserRecord => !!u)
+    .map((u) => ({
+      name: u.name,
+      kind: u.hash ? ("local" as const) : ("anilist" as const),
+      display: u.display ?? null,
+      invite: u.invite ?? null,
+      createdAt: u.createdAt ?? null,
+    }))
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+/** Delete an account and its synced library. Its logins stop working on their next request. */
+export async function deleteAccount(name: string): Promise<boolean> {
+  const user = await dbGet<UserRecord>(`user:${name}`);
+  if (!user) return false;
+  await dbDel(`user:${name}`);
+  await dbDel(`library:${name}`);
+  if (user.anilistId) await dbDel(`anilist:${user.anilistId}`);
+  await dbSet(USERS_INDEX, ((await dbGet<string[]>(USERS_INDEX)) ?? []).filter((n) => n !== name));
+  return true;
+}
+
+/** Give a local account a new random password. Returns it (shown to the owner once), or null. */
+export async function resetPassword(name: string): Promise<string | null> {
+  const user = await dbGet<UserRecord>(`user:${name}`);
+  if (!user?.hash) return null;
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+  const part = () => Array.from(randomBytes(4), (b) => chars[b % chars.length]).join("");
+  const password = `${part()}-${part()}-${part()}`;
+  const salt = randomBytes(16).toString("hex");
+  const hash = (await scrypt(password, salt, 64)).toString("hex");
+  await dbSet(`user:${name}`, { ...user, salt, hash } satisfies UserRecord);
+  return password;
 }

@@ -34,7 +34,11 @@ function setStatus(s: SyncStatus) {
 export async function refreshUser(): Promise<string | null> {
   try {
     const r = await fetch("/api/auth", { cache: "no-store" });
-    const data = (await r.json()) as { user: string | null; createdAt?: number | null; display?: string | null };
+    const data = (await r.json()) as { user: string | null; createdAt?: number | null; display?: string | null; removed?: boolean };
+    if (data.removed) {
+      window.location.href = "/gate";
+      return null;
+    }
     user = data.user;
     createdAt = data.createdAt ?? null;
     display = data.display ?? null;

@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import {
+  ADMIN_ACCOUNT,
   createLocalAccount,
   currentUser,
   endSession,
+  isAdminLogin,
   normalizeName,
+  sessionRemoved,
   signInLocal,
   signInWithAniList,
+  startSession,
   userInfo,
   validName,
   viewerFromToken,
@@ -18,7 +22,14 @@ import {
 // POST /api/auth { action: "logout" }
 export async function GET() {
   const user = await currentUser();
-  if (!user) return NextResponse.json({ user: null, createdAt: null, display: null, avatar: null });
+  if (!user) {
+    // The owner deleted this account: clear the login so the next page goes to the sign-in screen.
+    if (await sessionRemoved().catch(() => false)) {
+      await endSession();
+      return NextResponse.json({ user: null, removed: true });
+    }
+    return NextResponse.json({ user: null, createdAt: null, display: null, avatar: null });
+  }
   return NextResponse.json({ user, ...(await userInfo(user).catch(() => ({ createdAt: null, display: null, avatar: null }))) });
 }
 
@@ -42,6 +53,9 @@ export async function POST(req: Request) {
         if (password.length < 8) return NextResponse.json({ error: "Passwords need at least 8 characters." }, { status: 400 });
         const err = await createLocalAccount(name, password);
         if (err) return NextResponse.json({ error: err, needsInvite: err.startsWith("Enter your invite") }, { status: 400 });
+      } else if (await isAdminLogin(name, password)) {
+        await startSession(ADMIN_ACCOUNT);
+        return NextResponse.json({ user: ADMIN_ACCOUNT });
       } else if (!(await signInLocal(name, password))) {
         return NextResponse.json({ error: "Wrong username or password." }, { status: 401 });
       }

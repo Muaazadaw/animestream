@@ -19,6 +19,8 @@ export type Invite = {
   usedBy: string[];
   revoked: boolean;
   createdAt: number;
+  /** Kept so the owner can look it up again on /admin. Invites made before this was added only have the hash. */
+  password?: string;
 };
 
 export type InviteSummary = Omit<Invite, "salt" | "hash">;
@@ -47,6 +49,7 @@ export async function createInvite(note: string, maxUses: number): Promise<{ inv
     usedBy: [],
     revoked: false,
     createdAt: Date.now(),
+    password,
   };
   await dbSet(`invite:${user}`, invite);
   await dbSet(INDEX, [user, ...((await dbGet<string[]>(INDEX)) ?? [])]);
