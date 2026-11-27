@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
+import { mediaHref, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
 
 export default function AnimeCard({ anime, badge }: { anime: MediaCard; badge?: string }) {
   const title = titleOf(anime.title);
+  const manga = anime.type === "MANGA";
   const eps = anime.nextAiringEpisode ? anime.nextAiringEpisode.episode - 1 : anime.episodes;
+  const count = manga ? (anime.chapters ? `${anime.chapters} ch` : null) : eps ? `${eps} eps` : null;
   return (
-    <Link href={`/anime/${anime.id}`} className="card" title={title}>
+    <Link href={mediaHref(anime)} className="card" title={title}>
       <div className="card__img" style={{ background: anime.coverImage.color ?? "#1c1c26" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={anime.coverImage.extraLarge ?? anime.coverImage.large ?? undefined} alt="" loading="lazy" />
@@ -19,7 +21,7 @@ export default function AnimeCard({ anime, badge }: { anime: MediaCard; badge?: 
       </div>
       <div className="card__title">{title}</div>
       <div className="card__meta">
-        {[prettyEnum(anime.format), eps ? `${eps} eps` : null, anime.seasonYear].filter(Boolean).join(" · ")}
+        {[prettyEnum(anime.format), count, anime.seasonYear].filter(Boolean).join(" · ")}
       </div>
     </Link>
   );

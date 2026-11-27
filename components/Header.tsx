@@ -46,16 +46,28 @@ export default function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Manga mode: the manga pages, or search with ?type=manga.
+  const [mangaSearch, setMangaSearch] = useState(false);
+  useEffect(() => {
+    setMangaSearch(pathname === "/search" && new URLSearchParams(window.location.search).get("type") === "manga");
+  }, [pathname]);
+  const manga = pathname.startsWith("/manga") || mangaSearch;
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const term = q.trim();
-    router.push(term ? `/search?q=${encodeURIComponent(term)}` : "/search");
+    const params = new URLSearchParams();
+    if (manga) params.set("type", "manga");
+    if (term) params.set("q", term);
+    router.push(`/search${params.size ? `?${params}` : ""}`);
   }
 
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
   // The sign-in, invite and admin screens are full-page cards without the site chrome.
   if (/^\/(gate|admin|settings\/anilist)(\/|$)/.test(pathname)) return null;
+  // The manga reader is full screen with its own controls.
+  if (/^\/manga\/\d+\/read\//.test(pathname)) return null;
 
   return (
     <>
@@ -91,11 +103,27 @@ export default function Header() {
       </aside>
 
       <header className={`topbar ${scrolled ? "topbar--solid" : ""}`}>
-        <Link href="/" className="topbar__logo" aria-label="Mayoi home">
-          <Logo />
-        </Link>
+        <div className="topbar__left">
+          <Link href={manga ? "/manga" : "/"} className="topbar__logo" aria-label="Mayoi home">
+            <Logo />
+          </Link>
+          <nav className="mode" aria-label="Anime or manga">
+            <Link href="/" className={!manga ? "is-active" : ""}>
+              Anime
+            </Link>
+            <Link href="/manga" className={manga ? "is-active" : ""}>
+              Manga
+            </Link>
+          </nav>
+        </div>
         <form className="search" onSubmit={submit} role="search">
-          <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search anime…" aria-label="Search anime" />
+          <input
+            ref={searchRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={manga ? "Search manga…" : "Search anime…"}
+            aria-label={manga ? "Search manga" : "Search anime"}
+          />
           <button type="submit" aria-label="Search">
             <Icon name="search" size={17} />
           </button>

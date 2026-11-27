@@ -185,7 +185,7 @@ export async function getCharacters(id: number): Promise<Character[]> {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         query: `query ($id: Int, $page: Int) {
-          Media(id: $id, type: ANIME) {
+          Media(id: $id) {
             characters(page: $page, perPage: 25, sort: [ROLE, RELEVANCE, ID]) {
               pageInfo { hasNextPage }
               edges {

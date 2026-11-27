@@ -8,7 +8,9 @@ import {
   currentSeason,
   FORMATS,
   GENRES,
+  MANGA_FORMATS,
   getTags,
+  mediaHref,
   prettyEnum,
   searchAnime,
   SEARCH_FILTER_KEYS,
@@ -35,6 +37,7 @@ const STATUSES = ["RELEASING", "FINISHED", "NOT_YET_RELEASED", "HIATUS", "CANCEL
 const SEASONS = ["WINTER", "SPRING", "SUMMER", "FALL"];
 const TYPES = [
   { id: "anime", label: "Anime", icon: "grid" },
+  { id: "manga", label: "Manga", icon: "library" },
   { id: "staff", label: "Staff", icon: "user" },
   { id: "characters", label: "Characters", icon: "user" },
 ] as const;
@@ -50,7 +53,9 @@ export default async function SearchPage({ searchParams }: Props) {
   delete sp.genre;
   delete sp.format;
 
-  const type = sp.type === "staff" || sp.type === "characters" ? sp.type : "anime";
+  const type = sp.type === "staff" || sp.type === "characters" || sp.type === "manga" ? sp.type : "anime";
+  const media = type === "anime" || type === "manga";
+  const manga = type === "manga";
   const page = Math.max(1, Number(sp.page) || 1);
   const pageHref = (p: number) => {
     const qs = new URLSearchParams(Object.entries(sp).filter(([k, v]) => v && k !== "page") as [string, string][]);
@@ -65,15 +70,16 @@ export default async function SearchPage({ searchParams }: Props) {
   };
 
   const [anime, people, tags] = await Promise.all([
-    type === "anime"
+    media
       ? searchAnime({
+          type: manga ? "MANGA" : "ANIME",
           search: sp.q,
           genres: csv(sp.genres),
           tags: csv(sp.tags),
           formats: csv(sp.formats),
           status: sp.status,
           year: Number(sp.year) || undefined,
-          season: sp.season,
+          season: manga ? undefined : sp.season,
           source: sp.source,
           country: sp.country,
           minScore: Number(sp.score) || undefined,
@@ -81,11 +87,11 @@ export default async function SearchPage({ searchParams }: Props) {
           page,
         })
       : null,
-    type !== "anime" ? searchPeople(type, sp.q, page) : null,
-    type === "anime" ? getTags().catch(() => []) : [],
+    !media ? searchPeople(type as "staff" | "characters", sp.q, page) : null,
+    media ? getTags().catch(() => []) : [],
   ]);
   const hasNext = (anime ?? people)?.pageInfo.hasNextPage ?? false;
-  const empty = type === "anime" ? anime?.media.length === 0 : people?.people.length === 0;
+  const empty = media ? anime?.media.length === 0 : people?.people.length === 0;
   const thisYear = currentSeason().year;
 
   const pager = (
@@ -139,18 +145,18 @@ export default async function SearchPage({ searchParams }: Props) {
         </div>
       ) : null}
 
-      {type === "anime" ? (
+      {media ? (
         <SearchFilters
           key={SEARCH_FILTER_KEYS.map((k) => sp[k] ?? "").join("|")}
           values={Object.fromEntries(Object.entries(sp).filter(([, v]) => v)) as Record<string, string>}
           genres={GENRES.map((g) => ({ value: g, label: g }))}
           tags={tags.map((t) => ({ value: t.name, label: t.name, group: t.category.split("-")[0] }))}
-          formats={opt(FORMATS)}
+          formats={opt(manga ? MANGA_FORMATS : FORMATS)}
           statuses={opt(STATUSES)}
           sorts={SORTS.map(([value, label]) => ({ value, label }))}
           sources={opt(SOURCES)}
           countries={COUNTRIES.map(([value, label]) => ({ value, label }))}
-          seasons={opt(SEASONS)}
+          seasons={manga ? [] : opt(SEASONS)}
           years={Array.from({ length: thisYear + 2 - 1960 }, (_, i) => String(thisYear + 1 - i)).map((y) => ({ value: y, label: y }))}
         />
       ) : null}
@@ -162,12 +168,12 @@ export default async function SearchPage({ searchParams }: Props) {
 
       {empty ? (
         <p className="empty">Nothing matched. Try fewer filters.</p>
-      ) : type === "anime" ? (
+      ) : media ? (
         <div className="latest__grid">
           {anime!.media.map((m) => {
-            const eps = m.episodes ?? airedEpisodes(m);
+            const eps = manga ? m.chapters : (m.episodes ?? airedEpisodes(m));
             return (
-              <Link key={m.id} href={`/anime/${m.id}`} className="pcard">
+              <Link key={m.id} href={mediaHref(m)} className="pcard">
                 <span className="pcard__img">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={m.coverImage.large ?? undefined} alt="" loading="lazy" />
@@ -176,7 +182,8 @@ export default async function SearchPage({ searchParams }: Props) {
                 <span className="chips">
                   {eps ? (
                     <span>
-                      <Icon name="cc" size={11} /> {eps}
+                      {manga ? "" : <Icon name="cc" size={11} />} {eps}
+                      {manga ? " ch" : ""}
                     </span>
                   ) : null}
                   {m.format ? <span>{prettyEnum(m.format)}</span> : null}

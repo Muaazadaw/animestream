@@ -161,7 +161,9 @@ export default function SearchFilters({
             value={values.score ?? ""}
             onChange={(v) => set("score", v)}
           />
-          <Select label="Season" options={seasons} value={values.season ?? ""} onChange={(v) => set("season", v)} />
+          {seasons.length ? (
+            <Select label="Season" options={seasons} value={values.season ?? ""} onChange={(v) => set("season", v)} />
+          ) : null}
           <span className="sfilters__note">Non-adult only</span>
         </div>
       ) : null}

@@ -155,6 +155,28 @@ export function setListEntry(entry: Omit<ListEntry, "updatedAt">) {
   window.dispatchEvent(new CustomEvent(LIST_CHANGE_EVENT, { detail: full }));
 }
 
+/**
+ * Record that a manga chapter was read: moves list progress forward (never back)
+ * and marks it Reading, or Completed at the last chapter. Pushed to AniList if linked.
+ */
+export function markChapterRead(manga: SavedAnime, chapter: number) {
+  const prefs = getPrefs();
+  if (prefs.pauseHistory || !prefs.autoSyncList || !Number.isFinite(chapter)) return;
+  const n = Math.floor(chapter);
+  const cur = getLists()[manga.id];
+  if (cur && cur.progress >= n) return;
+  if (cur && cur.status !== "CURRENT" && cur.status !== "REPEATING" && cur.status !== "PLANNING") return;
+  const done = !!manga.chapters && n >= manga.chapters;
+  setListEntry({
+    ...manga,
+    type: "MANGA",
+    status: done ? "COMPLETED" : cur?.status === "REPEATING" ? "REPEATING" : "CURRENT",
+    progress: n,
+    score: cur?.score ?? 0,
+    from: cur?.from ?? "site",
+  });
+}
+
 export function setListStatus(anime: SavedAnime, status: ListStatus | null) {
   const lists = getLists();
   if (!status) {

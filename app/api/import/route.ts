@@ -106,7 +106,7 @@ export async function POST(req: Request) {
   }
 
   const from = body.service === "mal" ? "mal" : "anilist";
-  const favorites = from === "anilist" ? (anilistUser?.favourites.anime.nodes ?? []) : [];
+  const favorites = from === "anilist" ? [...(anilistUser?.favourites.anime.nodes ?? []), ...(anilistUser?.favourites.manga?.nodes ?? [])] : [];
   const result = toLibraryState(entries, from, favorites);
   return NextResponse.json({ ...result, avatar: from === "anilist" ? (anilistUser?.avatar.large ?? null) : null });
 }

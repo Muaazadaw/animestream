@@ -8,7 +8,7 @@ import { Icon } from "@/components/Menu";
 import type { AnimeInfo } from "@/app/api/anime-info/route";
 import { prettyEnum, statusDot } from "@/lib/anilist";
 import { fetchAnimeInfo } from "@/lib/notifications";
-import { LIST_STATUSES, type ListStatus } from "@/lib/state";
+import { isManga, LIST_STATUSES, type ListStatus } from "@/lib/state";
 import {
   createCustomList,
   deleteCustomList,
@@ -86,7 +86,14 @@ function useLibrary() {
 
 function CardMenu({ entry, custom }: { entry: Entry; custom: CustomList[] }) {
   const [open, setOpen] = useState(false);
-  const anime: SavedAnime = { id: entry.id, title: entry.title, cover: entry.cover, format: entry.format, episodes: entry.episodes };
+  const anime: SavedAnime = {
+    id: entry.id,
+    title: entry.title,
+    cover: entry.cover,
+    format: entry.format,
+    episodes: entry.episodes,
+    ...(isManga(entry) ? { type: "MANGA" as const, chapters: entry.chapters ?? null } : {}),
+  };
   return (
     <div className="lcard__menu" onMouseLeave={() => setOpen(false)}>
       <button className="lcard__badge" onClick={(e) => (e.preventDefault(), setOpen(!open))} aria-label="Change list">
@@ -132,6 +139,7 @@ export default function LibraryPage() {
   const { entries, custom } = useLibrary();
   const [view, setView] = useState<View>("ALL");
   const [type, setType] = useState("");
+  const [kind, setKind] = useState<"" | "ANIME" | "MANGA">("");
   const [airing, setAiring] = useState("");
   const [q, setQ] = useState("");
   const [info, setInfo] = useState<Record<number, AnimeInfo>>({});
@@ -174,12 +182,13 @@ export default function LibraryPage() {
     const term = q.trim().toLowerCase();
     return list.filter((e) => {
       const m = info[e.id];
+      if (kind && (kind === "MANGA") !== isManga(e)) return false;
       if (type && (m?.format ?? e.format) !== type) return false;
       if (airing && m?.status !== airing) return false;
       if (term && !e.title.toLowerCase().includes(term)) return false;
       return true;
     });
-  }, [entries, view, customView, q, type, airing, info]);
+  }, [entries, view, customView, q, type, kind, airing, info]);
 
   const name = display ?? profile.anilist?.name ?? user ?? "…";
   const viewLabel =
@@ -199,22 +208,37 @@ export default function LibraryPage() {
         </div>
         <div className="profile__stats">
           <div>
-            <strong>{counts.ALL ?? 0}</strong>
-            <span>Total anime</span>
+            <strong>{entries.filter((e) => !isManga(e)).length}</strong>
+            <span>Anime</span>
+          </div>
+          <div>
+            <strong>{entries.filter(isManga).length}</strong>
+            <span>Manga</span>
           </div>
           <div>
             <strong>{counts.COMPLETED ?? 0}</strong>
             <span>Completed</span>
           </div>
           <div>
-            <strong>{entries.reduce((n, e) => n + (e.progress || 0), 0).toLocaleString()}</strong>
+            <strong>{entries.reduce((n, e) => n + (isManga(e) ? 0 : e.progress || 0), 0).toLocaleString()}</strong>
             <span>Episodes</span>
+          </div>
+          <div>
+            <strong>{entries.reduce((n, e) => n + (isManga(e) ? e.progress || 0 : 0), 0).toLocaleString()}</strong>
+            <span>Chapters</span>
           </div>
         </div>
       </section>
 
       <div className="profile__body">
         <aside className="lside">
+          <div className="mtabs lside__kind">
+            {([["", "All"], ["ANIME", "Anime"], ["MANGA", "Manga"]] as const).map(([k, label]) => (
+              <button key={k} className={kind === k ? "is-active" : ""} onClick={() => setKind(k)}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="lside__filters">
             <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
               <option value="">All types</option>
@@ -333,9 +357,10 @@ export default function LibraryPage() {
             <div className="lgrid">
               {shown.map((e) => {
                 const m = info[e.id];
-                const eps = m?.episodes ?? e.episodes;
+                const manga = isManga(e);
+                const eps = manga ? e.chapters : (m?.episodes ?? e.episodes);
                 return (
-                  <Link key={e.id} href={`/anime/${e.id}`} className="lcard">
+                  <Link key={e.id} href={manga ? `/manga/${e.id}` : `/anime/${e.id}`} className="lcard">
                     <span className="lcard__img">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={m?.coverImage.large ?? e.cover ?? undefined} alt="" loading="lazy" />
@@ -358,10 +383,10 @@ export default function LibraryPage() {
                     <span className="chips">
                       {m?.format ?? e.format ? <span>{prettyEnum(m?.format ?? e.format)}</span> : null}
                       {m?.seasonYear ? <span>{m.seasonYear}</span> : null}
-                      {eps ? (
+                      {eps || (manga && e.progress) ? (
                         <span>
-                          <Icon name="cc" size={11} /> {e.progress ? `${e.progress}/` : ""}
-                          {eps}
+                          {manga ? "Ch. " : <Icon name="cc" size={11} />} {e.progress ? `${e.progress}${eps ? "/" : ""}` : ""}
+                          {eps ?? ""}
                         </span>
                       ) : null}
                       {m?.averageScore ? <span>★ {m.averageScore}</span> : null}

@@ -9,7 +9,18 @@ export type SavedAnime = {
   cover: string | null;
   format?: string | null;
   episodes?: number | null;
+  /** "MANGA" for manga (progress counts chapters); anime when missing. */
+  type?: "ANIME" | "MANGA";
+  /** Manga only: total chapters, if known. */
+  chapters?: number | null;
 };
+
+const MANGA_FORMATS = new Set(["MANGA", "NOVEL", "ONE_SHOT"]);
+
+/** Whether a saved entry is manga (older entries have no type, so the format decides). */
+export function isManga(a: Pick<SavedAnime, "type" | "format">) {
+  return a.type === "MANGA" || (!a.type && !!a.format && MANGA_FORMATS.has(a.format));
+}
 
 export type HistoryEntry = SavedAnime & {
   episode: number;

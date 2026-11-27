@@ -15,6 +15,7 @@ import { importList, loginWithAniList } from "./sync";
 import {
   ANILIST_USER_LISTS_QUERY,
   entriesFromAniList,
+  favouritesFromAniList,
   toLibraryState,
   type AniListUserListsData,
 } from "./list-import";
@@ -107,7 +108,7 @@ export async function pullFromAniList(): Promise<{ total: number } | null> {
   if (link) {
     const data = await gql<AniListUserListsData>(ANILIST_USER_LISTS_QUERY, { userId: link.userId }, link.token);
     const entries = entriesFromAniList(data);
-    importState(toLibraryState(entries, "anilist", data.User?.favourites.anime.nodes ?? []).state, true);
+    importState(toLibraryState(entries, "anilist", favouritesFromAniList(data)).state, true);
     total = entries.length;
   } else if (profile.anilistUser) {
     total = (await importList("anilist", profile.anilistUser)).total;

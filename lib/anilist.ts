@@ -18,6 +18,10 @@ export type MediaCard = {
   format: string | null;
   status: string | null;
   episodes: number | null;
+  /** Manga only. */
+  chapters?: number | null;
+  /** "ANIME" or "MANGA". */
+  type?: string | null;
   averageScore: number | null;
   seasonYear: number | null;
   genres: string[];
@@ -28,6 +32,7 @@ export type MediaCard = {
 export type ExternalLink = { url: string; site: string; type: string | null; icon: string | null; color: string | null };
 
 export type MediaDetail = MediaCard & {
+  volumes?: number | null;
   duration: number | null;
   season: string | null;
   popularity: number | null;
@@ -35,6 +40,9 @@ export type MediaDetail = MediaCard & {
   startDate: { year: number | null; month: number | null; day: number | null };
   trailer: { id: string; site: string } | null;
   studios: { nodes: { name: string }[] };
+  staff?: { edges: { role: string; node: { name: { full: string } } }[] };
+  synonyms?: string[];
+  countryOfOrigin?: string | null;
   externalLinks: ExternalLink[];
   streamingEpisodes: { title: string; thumbnail: string; url: string; site: string }[];
   characters: {
@@ -51,9 +59,11 @@ const CARD_FIELDS = `
   title { romaji english native userPreferred }
   coverImage { extraLarge large color }
   bannerImage
+  type
   format
   status
   episodes
+  chapters
   averageScore
   seasonYear
   genres
@@ -170,6 +180,45 @@ export async function getHome() {
   };
 }
 
+export const MANGA_FORMATS = ["MANGA", "NOVEL", "ONE_SHOT"];
+
+/** Cards for a set of AniList ids (any type), in the order given. */
+export async function getMediaByIds(ids: number[]): Promise<MediaCard[]> {
+  const out = new Map<number, MediaCard>();
+  for (let i = 0; i < ids.length; i += 50) {
+    const data = await query<{ Page: { media: (MediaCard & { isAdult: boolean })[] } }>(
+      `query ($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids) { ${CARD_FIELDS} isAdult } } }`,
+      { ids: ids.slice(i, i + 50) },
+      600,
+    );
+    for (const m of data.Page.media) if (!m.isAdult) out.set(m.id, m);
+  }
+  return ids.map((id) => out.get(id)).filter((m): m is MediaCard => !!m);
+}
+
+/** Rows for the manga home page. */
+export async function getMangaHome() {
+  type Page = { media: (MediaCard & { description?: string | null })[] };
+  const data = await query<{ trending: Page; releasing: Page; manhwa: Page; popular: Page; top: Page }>(
+    `query {
+      trending: Page(perPage: 20) { media(type: MANGA, sort: TRENDING_DESC, isAdult: false) { ${CARD_FIELDS} description(asHtml: false) } }
+      releasing: Page(perPage: 20) { media(type: MANGA, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      manhwa: Page(perPage: 20) { media(type: MANGA, countryOfOrigin: "KR", sort: TRENDING_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      popular: Page(perPage: 20) { media(type: MANGA, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
+      top: Page(perPage: 20) { media(type: MANGA, sort: SCORE_DESC, isAdult: false) { ${CARD_FIELDS} } }
+    }`,
+    {},
+    1800,
+  );
+  return {
+    trending: data.trending.media,
+    releasing: data.releasing.media,
+    manhwa: data.manhwa.media,
+    popular: data.popular.media,
+    top: data.top.media,
+  };
+}
+
 export async function getSeasonal(season: string, year: number, page = 1) {
   const data = await query<{ Page: { pageInfo: { hasNextPage: boolean }; media: (MediaCard & { description: string | null })[] } }>(
     `query ($season: MediaSeason, $year: Int, $page: Int) {
@@ -187,6 +236,7 @@ export async function getSeasonal(season: string, year: number, page = 1) {
 }
 
 export type SearchParams = {
+  type?: MediaType;
   search?: string;
   genres?: string[];
   tags?: string[];
@@ -210,23 +260,25 @@ export const SEARCH_FILTER_KEYS = ["genres", "tags", "formats", "status", "year"
 export async function searchAnime(p: SearchParams) {
   const sort = p.sort || (p.search ? "SEARCH_MATCH" : "POPULARITY_DESC");
   const data = await query<{ Page: { pageInfo: { hasNextPage: boolean; currentPage: number }; media: MediaCard[] } }>(
-    `query ($search: String, $genres: [String], $tags: [String], $formats: [MediaFormat], $status: MediaStatus,
-            $year: Int, $season: MediaSeason, $source: MediaSource, $country: CountryCode, $minScore: Int,
+    `query ($type: MediaType, $search: String, $genres: [String], $tags: [String], $formats: [MediaFormat], $status: MediaStatus,
+            $year: Int, $yearLike: String, $season: MediaSeason, $source: MediaSource, $country: CountryCode, $minScore: Int,
             $sort: [MediaSort], $page: Int, $perPage: Int) {
       Page(page: $page, perPage: $perPage) {
         pageInfo { hasNextPage currentPage }
-        media(type: ANIME, search: $search, genre_in: $genres, tag_in: $tags, format_in: $formats, status: $status,
-              seasonYear: $year, season: $season, source: $source, countryOfOrigin: $country,
+        media(type: $type, search: $search, genre_in: $genres, tag_in: $tags, format_in: $formats, status: $status,
+              seasonYear: $year, startDate_like: $yearLike, season: $season, source: $source, countryOfOrigin: $country,
               averageScore_greater: $minScore, sort: $sort, isAdult: false) { ${CARD_FIELDS} }
       }
     }`,
     {
+      type: p.type ?? "ANIME",
       search: p.search || undefined,
       genres: p.genres?.length ? p.genres : undefined,
       tags: p.tags?.length ? p.tags : undefined,
       formats: p.formats?.length ? p.formats : undefined,
       status: p.status || undefined,
-      year: p.year || undefined,
+      year: p.type === "MANGA" ? undefined : p.year || undefined,
+      yearLike: p.type === "MANGA" && p.year ? `${p.year}%` : undefined,
       season: p.season || undefined,
       source: p.source || undefined,
       country: p.country || undefined,
@@ -297,11 +349,27 @@ export const COUNTRIES: [string, string][] = [
   ["TW", "Taiwan"],
 ];
 
-export async function getAnime(id: number): Promise<MediaDetail | null> {
+export type MediaType = "ANIME" | "MANGA";
+
+export function getAnime(id: number) {
+  return getMedia(id, "ANIME");
+}
+
+export function getManga(id: number) {
+  return getMedia(id, "MANGA");
+}
+
+/** Where a show or manga lives on this site. */
+export function mediaHref(m: { id: number; type?: string | null }) {
+  return m.type === "MANGA" ? `/manga/${m.id}` : `/anime/${m.id}`;
+}
+
+async function getMedia(id: number, type: MediaType): Promise<MediaDetail | null> {
   const data = await query<{ Media: MediaDetail | null }>(
-    `query ($id: Int) {
-      Media(id: $id, type: ANIME) {
+    `query ($id: Int, $type: MediaType) {
+      Media(id: $id, type: $type) {
         ${CARD_FIELDS}
+        volumes
         description(asHtml: false)
         duration
         season
@@ -310,6 +378,9 @@ export async function getAnime(id: number): Promise<MediaDetail | null> {
         startDate { year month day }
         trailer { id site }
         studios(isMain: true) { nodes { name } }
+        staff(perPage: 8, sort: [RELEVANCE]) { edges { role node { name { full } } } }
+        synonyms
+        countryOfOrigin
         externalLinks { url site type icon color }
         streamingEpisodes { title thumbnail url site }
         characters(perPage: 12, sort: [ROLE, RELEVANCE]) { edges { role node { name { full } image { medium } } } }
@@ -317,7 +388,7 @@ export async function getAnime(id: number): Promise<MediaDetail | null> {
         recommendations(perPage: 14, sort: RATING_DESC) { nodes { mediaRecommendation { ${CARD_FIELDS} } } }
       }
     }`,
-    { id },
+    { id, type },
     3600,
   ).catch((e: Error) => {
     if (/not found/i.test(e.message)) return { Media: null };

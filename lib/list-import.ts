@@ -2,7 +2,7 @@
 // the server import route and the browser-side AniList sync.
 
 import { titleOf, type MediaTitle } from "./anilist";
-import type { Favorite, HistoryEntry, LibraryState, ListEntry, ListStatus } from "./state";
+import type { Favorite, HistoryEntry, LibraryState, ListEntry, ListStatus, SavedAnime } from "./state";
 
 export type ImportMedia = {
   id: number;
@@ -11,38 +11,61 @@ export type ImportMedia = {
   coverImage: { large: string | null };
   format: string | null;
   episodes: number | null;
+  type?: string | null;
+  chapters?: number | null;
 };
 
 export type ImportedEntry = { media: ImportMedia; status: ListStatus; progress: number; score: number; updatedAt: number };
 
-export const IMPORT_MEDIA_FIELDS = "id idMal title { romaji english native userPreferred } coverImage { large } format episodes";
+export const IMPORT_MEDIA_FIELDS = "id idMal title { romaji english native userPreferred } coverImage { large } format episodes type chapters";
 
 /** Lists + favourites for one AniList user, by name or id. Works with or without a token (token adds private lists). */
 export const ANILIST_USER_LISTS_QUERY = `query ($user: String, $userId: Int) {
   User(name: $user, id: $userId) {
     id name avatar { large }
-    favourites { anime(perPage: 50) { nodes { ${IMPORT_MEDIA_FIELDS} } } }
+    favourites {
+      anime(perPage: 50) { nodes { ${IMPORT_MEDIA_FIELDS} } }
+      manga(perPage: 50) { nodes { ${IMPORT_MEDIA_FIELDS} } }
+    }
   }
   MediaListCollection(userName: $user, userId: $userId, type: ANIME) {
     lists { entries { status progress score(format: POINT_100) updatedAt media { ${IMPORT_MEDIA_FIELDS} } } }
   }
+  mangaLists: MediaListCollection(userName: $user, userId: $userId, type: MANGA) {
+    lists { entries { status progress score(format: POINT_100) updatedAt media { ${IMPORT_MEDIA_FIELDS} } } }
+  }
 }`;
 
-export type AniListUserListsData = {
-  User: { id: number; name: string; avatar: { large: string | null }; favourites: { anime: { nodes: ImportMedia[] } } } | null;
-  MediaListCollection: {
-    lists: { entries: { status: ListStatus; progress: number; score: number; updatedAt: number; media: ImportMedia }[] }[];
-  };
+type AniListLists = {
+  lists: { entries: { status: ListStatus; progress: number; score: number; updatedAt: number; media: ImportMedia }[] }[];
 };
 
+export type AniListUserListsData = {
+  User: {
+    id: number;
+    name: string;
+    avatar: { large: string | null };
+    favourites: { anime: { nodes: ImportMedia[] }; manga?: { nodes: ImportMedia[] } };
+  } | null;
+  MediaListCollection: AniListLists;
+  mangaLists?: AniListLists | null;
+};
+
+/** Favourited anime and manga. */
+export function favouritesFromAniList(data: AniListUserListsData): ImportMedia[] {
+  const f = data.User?.favourites;
+  return [...(f?.anime.nodes ?? []), ...(f?.manga?.nodes ?? [])];
+}
+
 export function entriesFromAniList(data: AniListUserListsData): ImportedEntry[] {
-  return data.MediaListCollection.lists.flatMap((l) =>
-    l.entries.map((e) => ({ ...e, updatedAt: (e.updatedAt || 0) * 1000 })),
+  return [data.MediaListCollection, data.mangaLists].flatMap((c) =>
+    (c?.lists ?? []).flatMap((l) => l.entries.map((e) => ({ ...e, updatedAt: (e.updatedAt || 0) * 1000 }))),
   );
 }
 
-function savedAnime(m: ImportMedia) {
-  return { id: m.id, title: titleOf(m.title), cover: m.coverImage.large, format: m.format, episodes: m.episodes };
+function savedAnime(m: ImportMedia): SavedAnime {
+  const base = { id: m.id, title: titleOf(m.title), cover: m.coverImage.large, format: m.format, episodes: m.episodes };
+  return m.type === "MANGA" ? { ...base, type: "MANGA", chapters: m.chapters ?? null } : base;
 }
 
 export function toLibraryState(entries: ImportedEntry[], from: "anilist" | "mal", favoriteMedia: ImportMedia[] = []) {
@@ -53,7 +76,7 @@ export function toLibraryState(entries: ImportedEntry[], from: "anilist" | "mal"
     lists[anime.id] = { ...anime, status: e.status, progress: e.progress, score: e.score, updatedAt: e.updatedAt, from };
 
     // Shows in progress go to "continue watching", on the next unwatched episode.
-    if (e.status === "CURRENT" || e.status === "REPEATING") {
+    if (anime.type !== "MANGA" && (e.status === "CURRENT" || e.status === "REPEATING")) {
       const next = anime.episodes ? Math.min(e.progress + 1, anime.episodes) : e.progress + 1;
       history.push({ ...anime, episode: next, time: 0, duration: 0, updatedAt: e.updatedAt });
     }
