@@ -160,10 +160,10 @@ function Notifications() {
 }
 
 export default function AccountMenu() {
-  const { user } = useAccount();
+  const { user, display } = useAccount();
   const profile = useProfile();
   const { open, setOpen, ref } = usePopover();
-  const name = user ?? profile.anilist?.name ?? profile.anilistUser ?? "Guest";
+  const name = display ?? profile.anilist?.name ?? user ?? "…";
 
   return (
     <div className="acct-group">
@@ -183,15 +183,9 @@ export default function AccountMenu() {
                 <Icon name="gear" size={18} />
               </Link>
             </div>
-            {user ? (
-              <button className="acct__logout" onClick={() => (setOpen(false), void logout())}>
-                <Icon name="power" size={16} /> Logout
-              </button>
-            ) : (
-              <Link href="/settings#account" className="acct__login" onClick={(e) => (e.preventDefault(), setOpen(false), openSettings("profile"))}>
-                <Icon name="user" size={16} /> Sign in to sync
-              </Link>
-            )}
+            <button className="acct__logout" onClick={() => (setOpen(false), void logout())}>
+              <Icon name="power" size={16} /> Logout
+            </button>
           </div>
         ) : null}
       </div>

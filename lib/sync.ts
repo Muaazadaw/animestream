@@ -14,6 +14,8 @@ export type SyncStatus = "idle" | "syncing" | "synced" | "error" | "offline";
 
 let user: string | null | undefined; // undefined = not checked yet
 let createdAt: number | null = null;
+/** AniList display name of the signed-in account. */
+let display: string | null = null;
 let status: SyncStatus = "idle";
 let lastSynced = 0;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -32,9 +34,10 @@ function setStatus(s: SyncStatus) {
 export async function refreshUser(): Promise<string | null> {
   try {
     const r = await fetch("/api/auth", { cache: "no-store" });
-    const data = (await r.json()) as { user: string | null; createdAt?: number | null };
+    const data = (await r.json()) as { user: string | null; createdAt?: number | null; display?: string | null };
     user = data.user;
     createdAt = data.createdAt ?? null;
+    display = data.display ?? null;
   } catch {
     user = null;
   }
@@ -100,14 +103,18 @@ export function startSync() {
   setInterval(() => user && document.visibilityState === "visible" && syncNow(), 60_000);
 }
 
-export async function login(action: "login" | "signup", username: string, password: string): Promise<string | null> {
+/**
+ * Sign in with an AniList access token. Returns an error message, or null on
+ * success. A first-time AniList user needs an invite entered beforehand.
+ */
+export async function loginWithAniList(token: string): Promise<{ error: string; needsInvite?: boolean } | null> {
   const r = await fetch("/api/auth", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, username, password }),
+    body: JSON.stringify({ action: "anilist", token }),
   });
-  const data = (await r.json().catch(() => ({}))) as { user?: string; error?: string };
-  if (!r.ok) return data.error ?? "Something went wrong.";
+  const data = (await r.json().catch(() => ({}))) as { user?: string; error?: string; needsInvite?: boolean };
+  if (!r.ok) return { error: data.error ?? "Something went wrong.", needsInvite: data.needsInvite };
   user = data.user ?? null;
   void refreshUser(); // picks up the account's join date
   emit();
@@ -121,15 +128,22 @@ export async function logout() {
   await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
   user = null;
   setStatus("idle");
+  // The whole site needs an account, so go back to the sign-in screen.
+  window.location.href = "/gate";
 }
 
 export function useAccount() {
   // Always start "unknown" so the server render and the first client render match.
-  const [state, setState] = useState<{ user: string | null | undefined; createdAt: number | null; status: SyncStatus; lastSynced: number }>(
-    { user: undefined, createdAt: null, status: "idle", lastSynced: 0 },
+  const [state, setState] = useState<{
+    user: string | null | undefined;
+    display: string | null;
+    createdAt: number | null;
+    status: SyncStatus;
+    lastSynced: number;
+  }>({ user: undefined, display: null, createdAt: null, status: "idle", lastSynced: 0 },
   );
   useEffect(() => {
-    const update = () => setState({ user, createdAt, status, lastSynced });
+    const update = () => setState({ user, display, createdAt, status, lastSynced });
     update();
     window.addEventListener(AUTH_EVENT, update);
     return () => window.removeEventListener(AUTH_EVENT, update);

@@ -1,75 +1,87 @@
-// Username + password accounts with a signed session cookie. Server only.
+// Accounts are AniList identities, with a signed session cookie. A new account
+// needs an invite (see lib/invites.ts); after that, signing in with AniList is
+// enough on any device. Server only.
 
-import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
-import { promisify } from "util";
 import { dbGet, dbSet } from "./db";
+import { inviteUsable, useInvite } from "./invites";
+import { GATE_COOKIE, SESSION_COOKIE, signValue, verifyValue } from "./signed";
 
-const scrypt = promisify(scryptCb) as (pw: string, salt: string, len: number) => Promise<Buffer>;
-const COOKIE = "as_session";
 const MAX_AGE = 60 * 60 * 24 * 180; // 180 days
 
-type UserRecord = { name: string; salt: string; hash: string; createdAt: number };
+type UserRecord = {
+  name: string;
+  createdAt: number;
+  anilistId?: number;
+  /** AniList display name and avatar, refreshed at each sign-in. */
+  display?: string;
+  avatar?: string | null;
+  /** The invite this account was created with. */
+  invite?: string;
+};
 
-/** AUTH_SECRET from the environment, or one generated once and kept in the store. */
-async function secret(): Promise<string> {
-  if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
-  let s = await dbGet<string>("config:secret");
-  if (!s) {
-    s = randomBytes(32).toString("hex");
-    await dbSet("config:secret", s);
-  }
+export type AniListViewer = { id: number; name: string; avatar: string | null };
+
+/** The session secret. It must come from the environment, because the middleware checks sessions too. */
+function secret(): string {
+  const s = process.env.AUTH_SECRET;
+  if (!s) throw new Error("AUTH_SECRET is not set");
   return s;
 }
 
-export function normalizeName(name: string) {
-  return name.trim().toLowerCase();
+/** Who an AniList access token belongs to (asked of AniList itself, so it can't be faked). */
+export async function viewerFromToken(token: string): Promise<AniListViewer | null> {
+  const res = await fetch("https://graphql.anilist.co", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ query: "query { Viewer { id name avatar { large } } }" }),
+    cache: "no-store",
+  }).catch(() => null);
+  const json = (await res?.json().catch(() => null)) as { data?: { Viewer?: { id: number; name: string; avatar: { large: string | null } } } } | null;
+  const v = json?.data?.Viewer;
+  return v ? { id: v.id, name: v.name, avatar: v.avatar.large } : null;
 }
 
-export function validName(name: string) {
-  return /^[a-z0-9_-]{3,24}$/.test(name);
+export async function userInfo(name: string): Promise<{ createdAt: number | null; display: string | null; avatar: string | null }> {
+  const u = await dbGet<UserRecord>(`user:${name}`);
+  return { createdAt: u?.createdAt ?? null, display: u?.display ?? null, avatar: u?.avatar ?? null };
 }
 
-export async function createUser(name: string, password: string): Promise<string | null> {
-  const key = `user:${name}`;
-  if (await dbGet(key)) return "That username is taken.";
-  const salt = randomBytes(16).toString("hex");
-  const hash = (await scrypt(password, salt, 64)).toString("hex");
-  await dbSet(key, { name, salt, hash, createdAt: Date.now() } satisfies UserRecord);
-  return null;
-}
+/**
+ * Sign in with AniList. Uses the account already linked to this AniList user;
+ * otherwise links the account that's signed in now (older username accounts);
+ * otherwise creates one, which needs an invite entered in the last hour.
+ */
+export async function signInWithAniList(viewer: AniListViewer): Promise<{ account: string } | { error: string }> {
+  const jar = await cookies();
+  const linkKey = `anilist:${viewer.id}`;
+  let account = await dbGet<string>(linkKey);
 
-export async function userCreatedAt(name: string): Promise<number | null> {
-  return (await dbGet<UserRecord>(`user:${name}`))?.createdAt ?? null;
-}
+  if (!account) {
+    const current = await currentUser();
+    if (current) {
+      account = current;
+    } else {
+      const invite = await verifyValue(secret(), jar.get(GATE_COOKIE)?.value);
+      if (!invite || !(await inviteUsable(invite))) {
+        return { error: "This AniList account isn't on Mayoi yet. Enter an invite first." };
+      }
+      account = `al${viewer.id}`;
+      await dbSet(`user:${account}`, { name: account, createdAt: Date.now(), invite } satisfies UserRecord);
+      await useInvite(invite, account);
+      jar.delete(GATE_COOKIE);
+    }
+    await dbSet(linkKey, account);
+  }
 
-export async function checkPassword(name: string, password: string): Promise<boolean> {
-  const user = await dbGet<UserRecord>(`user:${name}`);
-  // Hash anyway when the user doesn't exist, so timing doesn't reveal it.
-  const salt = user?.salt ?? "0".repeat(32);
-  const hash = await scrypt(password, salt, 64);
-  return !!user && timingSafeEqual(hash, Buffer.from(user.hash, "hex"));
-}
-
-/** Set a new password after checking the current one. Returns an error message or null. */
-export async function changePassword(name: string, current: string, next: string): Promise<string | null> {
-  if (!(await checkPassword(name, current))) return "Your current password is wrong.";
-  const user = await dbGet<UserRecord>(`user:${name}`);
-  if (!user) return "Account not found.";
-  const salt = randomBytes(16).toString("hex");
-  const hash = (await scrypt(next, salt, 64)).toString("hex");
-  await dbSet(`user:${name}`, { ...user, salt, hash } satisfies UserRecord);
-  return null;
-}
-
-async function sign(value: string) {
-  return createHmac("sha256", await secret()).update(value).digest("base64url");
+  const user = (await dbGet<UserRecord>(`user:${account}`)) ?? { name: account, createdAt: Date.now() };
+  await dbSet(`user:${account}`, { ...user, anilistId: viewer.id, display: viewer.name, avatar: viewer.avatar } satisfies UserRecord);
+  await startSession(account);
+  return { account };
 }
 
 export async function startSession(name: string) {
-  const exp = Math.floor(Date.now() / 1000) + MAX_AGE;
-  const value = `${name}.${exp}`;
-  (await cookies()).set(COOKIE, `${value}.${await sign(value)}`, {
+  (await cookies()).set(SESSION_COOKIE, await signValue(secret(), name, MAX_AGE), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -79,18 +91,11 @@ export async function startSession(name: string) {
 }
 
 export async function endSession() {
-  (await cookies()).delete(COOKIE);
+  (await cookies()).delete(SESSION_COOKIE);
 }
 
-/** The signed-in username, or null. */
+/** The signed-in account name, or null. */
 export async function currentUser(): Promise<string | null> {
-  const raw = (await cookies()).get(COOKIE)?.value;
-  if (!raw) return null;
-  const i = raw.lastIndexOf(".");
-  const value = raw.slice(0, i);
-  const sig = Buffer.from(raw.slice(i + 1));
-  const good = Buffer.from(await sign(value));
-  if (sig.length !== good.length || !timingSafeEqual(sig, good)) return null;
-  const [name, exp] = value.split(".");
-  return Number(exp) * 1000 > Date.now() ? name : null;
+  if (!process.env.AUTH_SECRET) return null;
+  return verifyValue(secret(), (await cookies()).get(SESSION_COOKIE)?.value);
 }

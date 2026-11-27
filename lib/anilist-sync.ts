@@ -11,7 +11,7 @@
 //
 // All calls go from the browser straight to AniList, which allows it (CORS).
 
-import { importList } from "./sync";
+import { importList, loginWithAniList } from "./sync";
 import {
   ANILIST_USER_LISTS_QUERY,
   entriesFromAniList,
@@ -50,11 +50,17 @@ export function connectUrl() {
   return `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(ANILIST_CLIENT_ID)}&response_type=token`;
 }
 
-/** Finish the login: read the token AniList put in the URL hash. */
+/**
+ * Finish the AniList login: read the token AniList put in the URL hash, sign in
+ * to the site with it (an AniList account is the site account), then link the
+ * list for two-way sync.
+ */
 export async function completeConnect(hash: string): Promise<AniListLink> {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const token = params.get("access_token");
   if (!token) throw new Error(params.get("error_description") ?? "AniList didn't send a login token.");
+  const failed = await loginWithAniList(token);
+  if (failed) throw Object.assign(new Error(failed.error), { needsInvite: !!failed.needsInvite });
   const expiresIn = Number(params.get("expires_in")) || 365 * 86400;
   const { Viewer } = await gql<{ Viewer: { id: number; name: string; avatar: { large: string | null } } }>(
     "query { Viewer { id name avatar { large } } }",

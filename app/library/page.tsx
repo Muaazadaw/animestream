@@ -126,7 +126,7 @@ function CardMenu({ entry, custom }: { entry: Entry; custom: CustomList[] }) {
 }
 
 export default function LibraryPage() {
-  const { user, createdAt } = useAccount();
+  const { user, display, createdAt } = useAccount();
   const profile = useProfile();
   const history = useHistory();
   const { entries, custom } = useLibrary();
@@ -181,7 +181,7 @@ export default function LibraryPage() {
     });
   }, [entries, view, customView, q, type, airing, info]);
 
-  const name = user ?? profile.anilist?.name ?? profile.anilistUser ?? "Guest";
+  const name = display ?? profile.anilist?.name ?? user ?? "…";
   const viewLabel =
     view === "ALL" ? "Watchlist" : view === "FAVORITES" ? "Favorites" : view === "HISTORY" ? "Continue watching" : customView ? customView.name : STATUS_LABEL[view as ListStatus];
 
@@ -194,13 +194,7 @@ export default function LibraryPage() {
           <span className="muted">
             {createdAt
               ? `Joined ${new Date(createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-              : user === null
-                ? (
-                  <>
-                    Saved in this browser only · <Link href="/settings#account" onClick={(e) => (e.preventDefault(), openSettings("profile"))}>Sign in to sync</Link>
-                  </>
-                )
-                : null}
+              : null}
           </span>
         </div>
         <div className="profile__stats">

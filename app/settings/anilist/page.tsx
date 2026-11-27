@@ -1,13 +1,13 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { LogoMark } from "@/components/Logo";
 import { completeConnect } from "@/lib/anilist-sync";
 
-// AniList redirects here after login with the token in the URL hash.
+// AniList redirects here after login with the token in the URL hash. It signs
+// in to Mayoi with it (creating the account if an invite was just entered),
+// links the list, then returns to where the person was going.
 export default function AniListCallbackPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -15,25 +15,39 @@ export default function AniListCallbackPage() {
     // Drop the token from the address bar and history straight away.
     window.history.replaceState(null, "", "/settings/anilist");
     completeConnect(hash)
-      .then(() => router.replace("/settings#anilist"))
-      .catch((e: Error) => setError(e.message));
-  }, [router]);
+      .then(() => {
+        let next = "/";
+        try {
+          next = sessionStorage.getItem("as:after-login") || "/";
+          sessionStorage.removeItem("as:after-login");
+        } catch {}
+        // A full load, so the whole site (header, lists) starts signed in.
+        window.location.replace(next);
+      })
+      .catch((e: Error & { needsInvite?: boolean }) => {
+        if (e.needsInvite) window.location.replace("/gate?error=invite");
+        else setError(e.message);
+      });
+  }, []);
 
   return (
-    <div className="container page center">
-      {error ? (
-        <>
-          <p className="form__error">Couldn&apos;t connect AniList: {error}</p>
-          <Link href="/settings#anilist" className="btn btn--sm">
-            Back to settings
-          </Link>
-        </>
-      ) : (
-        <>
-          <div className="spinner" />
-          <p className="muted">Connecting your AniList and importing your list…</p>
-        </>
-      )}
+    <div className="gate">
+      <div className="gate__card">
+        <LogoMark size={56} />
+        {error ? (
+          <>
+            <p className="form__error gate__error">Couldn&apos;t sign in with AniList: {error}</p>
+            <a href="/gate" className="gate__submit">
+              Back to sign in
+            </a>
+          </>
+        ) : (
+          <>
+            <div className="spinner" />
+            <p className="gate__sub">Signing you in and bringing over your AniList list…</p>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -7,9 +7,7 @@ import { Icon } from "@/components/Menu";
 import {
   ANILIST_CLIENT_ID,
   connectUrl,
-  disconnect,
   lastPull,
-  linkUsername,
   pullFromAniList,
   setAutoSync,
 } from "@/lib/anilist-sync";
@@ -27,7 +25,7 @@ import {
   setProfile,
   type Prefs,
 } from "@/lib/storage";
-import { login, logout, syncNow, useAccount } from "@/lib/sync";
+import { logout, syncNow, useAccount } from "@/lib/sync";
 
 const NAV: { group: string; items: { id: SettingsSection; label: string; icon: string }[] }[] = [
   {
@@ -180,7 +178,7 @@ export default function SettingsPanel({
   onClose: () => void;
   modal?: boolean;
 }) {
-  const { user } = useAccount();
+  const { user, display } = useAccount();
   const profile = useProfile();
   const [section, setSection] = useState<SettingsSection>(initial);
   const [q, setQ] = useState("");
@@ -204,7 +202,7 @@ export default function SettingsPanel({
     if (!modal) window.history.replaceState(null, "", `#${id}`);
   }
 
-  const name = user ?? profile.anilist?.name ?? profile.anilistUser ?? "Guest";
+  const name = display ?? profile.anilist?.name ?? user ?? "…";
   const searching = q.trim().length > 0;
   const shown = searching ? ALL_SECTIONS : [section];
 
@@ -270,23 +268,19 @@ export default function SettingsPanel({
 
 function ProfileSection() {
   const profile = useProfile();
-  const { user, createdAt } = useAccount();
+  const { user, display, createdAt } = useAccount();
   const [editAvatar, setEditAvatar] = useState(false);
   const [url, setUrl] = useState("");
   useEffect(() => setUrl(profile.avatar ?? ""), [profile.avatar]);
+  const shownName = display ?? profile.anilist?.name ?? user ?? "…";
 
   return (
     <>
       <Group title="Account info">
-        {user === undefined ? (
-          <Row title="Checking your account…" />
-        ) : user ? (
-          <Row title="Member since" desc={createdAt ? new Date(createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"} />
-        ) : (
-          <SignInRow />
-        )}
+        <Row title="Member since" desc={createdAt ? new Date(createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"} />
+        <Row title="AniList account" desc={`Signed in as ${shownName}. Your Mayoi account is your AniList account.`} where="account" />
         <Row title="Profile picture" desc={profile.avatar ? (profile.avatar === profile.anilist?.avatar ? "From AniList" : "Custom image") : "Your initial"} where="account">
-          <Avatar src={profile.avatar} name={name(user, profile)} size={36} />
+          <Avatar src={profile.avatar} name={shownName} size={36} />
           <button className="sbtn" onClick={() => setEditAvatar(!editAvatar)}>
             Edit
           </button>
@@ -316,107 +310,15 @@ function ProfileSection() {
             </form>
           </div>
         ) : null}
-        {user ? <Row title="Username" desc={user} /> : null}
       </Group>
 
-      {user ? (
-        <Group title="Password & security">
-          <PasswordRow />
-          <Row title="Sign out" desc="Sign out on this device. Your lists stay in your account.">
-            <button className="sbtn" onClick={() => logout()}>
-              Sign out
-            </button>
-          </Row>
-        </Group>
-      ) : null}
-    </>
-  );
-}
-
-function name(user: string | null | undefined, profile: { anilist?: { name: string } | null; anilistUser?: string | null }) {
-  return user ?? profile.anilist?.name ?? profile.anilistUser ?? "Guest";
-}
-
-function SignInRow() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  return (
-    <Row title={mode === "login" ? "Sign in" : "Create an account"} desc="Keeps your lists, Continue Watching and positions on every device." wide>
-      <form
-        className="sform"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setError(await login(mode, username, password));
-          setBusy(false);
-          setPassword("");
-        }}
-      >
-        <Segmented value={mode} options={[["login", "Sign in"], ["signup", "Create account"]]} onChange={setMode} />
-        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" autoComplete="username" required minLength={3} maxLength={24} />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password (8+ characters)"
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
-          required
-          minLength={8}
-        />
-        {error ? <p className="form__error">{error}</p> : null}
-        <button className="sbtn sbtn--primary" disabled={busy}>
-          {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
-        </button>
-      </form>
-    </Row>
-  );
-}
-
-function PasswordRow() {
-  const [open, setOpen] = useState(false);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [state, setState] = useState<{ busy?: boolean; error?: string; done?: boolean }>({});
-  return (
-    <>
-      <Row title="Password" desc={state.done ? "Password changed." : "Password set"}>
-        <button className="sbtn" onClick={() => (setOpen(!open), setState({}))}>
-          Edit
-        </button>
-      </Row>
-      {open ? (
-        <div className="srow srow--wide">
-          <form
-            className="sform"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setState({ busy: true });
-              const r = await fetch("/api/auth", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "password", password: current, newPassword: next }),
-              });
-              const data = (await r.json().catch(() => ({}))) as { error?: string };
-              if (r.ok) {
-                setState({ done: true });
-                setOpen(false);
-                setCurrent("");
-                setNext("");
-              } else setState({ error: data.error ?? "Couldn't change the password." });
-            }}
-          >
-            <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="Current password" autoComplete="current-password" required />
-            <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password (8+ characters)" autoComplete="new-password" required minLength={8} />
-            {state.error ? <p className="form__error">{state.error}</p> : null}
-            <button className="sbtn sbtn--primary" disabled={state.busy}>
-              {state.busy ? "Saving…" : "Change password"}
-            </button>
-          </form>
-        </div>
-      ) : null}
+      <Group title="Security">
+        <Row title="Sign out" desc="Sign out on this device. Signing back in with AniList brings everything back.">
+          <button className="sbtn" onClick={() => logout()}>
+            Sign out
+          </button>
+        </Row>
+      </Group>
     </>
   );
 }
@@ -424,86 +326,49 @@ function PasswordRow() {
 function ConnectionsSection() {
   const profile = useProfile();
   const link = profile.anilist && profile.anilist.expiresAt > Date.now() ? profile.anilist : null;
-  const expired = !!profile.anilist && !link;
-  const [username, setUsername] = useState("");
   const [state, setState] = useState<{ busy?: boolean; error?: string; done?: string }>({});
-  // Known only in the browser; filled in after mount so server and client render the same.
-  const [origin, setOrigin] = useState("");
-  useEffect(() => setOrigin(window.location.origin), []);
 
-  async function run(fn: () => Promise<string>) {
+  async function sync() {
     setState({ busy: true });
     try {
-      setState({ done: await fn() });
+      setState({ done: `Pulled ${(await pullFromAniList())?.total ?? 0} entries from AniList.` });
     } catch (e) {
       setState({ error: (e as Error).message });
     }
   }
 
   return (
-    <Group title="AniList" desc="Bring your AniList list here and keep it in step.">
+    <Group title="AniList" desc="Your Mayoi account and your AniList list stay in step.">
       {link ? (
         <>
           <Row title={`Connected as ${link.name}`} desc={`Two-way sync · last pulled ${ago(lastPull())}`} where="account">
-            <button className="sbtn" disabled={state.busy} onClick={() => run(async () => `Pulled ${(await pullFromAniList())?.total ?? 0} entries.`)}>
+            <Avatar src={link.avatar} name={link.name} size={30} />
+            <button className="sbtn" disabled={state.busy} onClick={sync}>
               {state.busy ? "Syncing…" : "Sync now"}
-            </button>
-            <button className="sbtn" onClick={() => disconnect()}>
-              Disconnect
             </button>
           </Row>
           <Row title="Update AniList as I watch" desc="Finishing an episode or changing a list here updates your AniList too." where="account">
             <Switch checked={link.autoSync} onChange={setAutoSync} label="Update AniList as I watch" />
           </Row>
         </>
-      ) : profile.anilistUser ? (
-        <Row title={`Following ${profile.anilistUser}`} desc={`One-way: your public list is re-imported every 30 minutes · last ${ago(lastPull())}`} where="account">
-          <button className="sbtn" disabled={state.busy} onClick={() => run(async () => `Pulled ${(await pullFromAniList())?.total ?? 0} entries.`)}>
-            {state.busy ? "Syncing…" : "Sync now"}
-          </button>
-          <button className="sbtn" onClick={() => disconnect()}>
-            Unlink
-          </button>
-        </Row>
       ) : (
-        <>
-          <Row
-            title="Connect AniList"
-            desc={
-              ANILIST_CLIENT_ID
-                ? "Two-way: episodes you finish here update your AniList, and your full list (private entries too) comes back."
-                : `Needs NEXT_PUBLIC_ANILIST_CLIENT_ID (AniList → Settings → Developer → Create New Client, redirect URL ${origin}/settings/anilist).`
-            }
+        <Row
+          title={profile.anilist ? "AniList login expired" : "Reconnect AniList"}
+          desc="Sign in with AniList again on this device to keep your list syncing."
+        >
+          <a
+            className="sbtn sbtn--primary"
+            href={ANILIST_CLIENT_ID ? connectUrl() : "#"}
+            onClick={() => {
+              try {
+                sessionStorage.setItem("as:after-login", window.location.pathname + window.location.search);
+              } catch {}
+            }}
           >
-            {ANILIST_CLIENT_ID ? (
-              <a className="sbtn sbtn--primary" href={connectUrl()}>
-                Connect
-              </a>
-            ) : null}
-          </Row>
-          <Row title="Follow a public username" desc="One-way, no login: your public list and favourites are re-imported every 30 minutes." wide>
-            <form
-              className="sinline"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const n = username.trim();
-                if (!n) return;
-                run(async () => {
-                  const { counts, total } = await linkUsername(n);
-                  const parts = LIST_STATUSES.filter((s) => counts[s.id]).map((s) => `${counts[s.id]} ${s.label.toLowerCase()}`);
-                  return `Linked — ${total} shows${parts.length ? ` (${parts.join(", ")})` : ""}.`;
-                });
-              }}
-            >
-              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="AniList username" />
-              <button className="sbtn" disabled={state.busy}>
-                {state.busy ? "Linking…" : "Link"}
-              </button>
-            </form>
-          </Row>
-        </>
+            Reconnect
+          </a>
+        </Row>
       )}
-      {expired ? <Row title="AniList login expired" desc="Connect again to keep two-way sync working." /> : null}
       {state.error || state.done ? (
         <div className="srow srow--msg">{state.error ? <p className="form__error">{state.error}</p> : <p className="form__ok">{state.done}</p>}</div>
       ) : null}
@@ -676,7 +541,7 @@ function DataSection() {
             </div>
           ) : null}
         </Row>
-        <Row title="From AniList or MyAnimeList" desc="Follow your AniList username under Connected accounts to bring in your list.">
+        <Row title="From AniList" desc="Your AniList list comes in automatically. Sync it any time under Connected accounts.">
           <button className="sbtn" onClick={() => openSection("connections")}>
             Connected accounts
           </button>

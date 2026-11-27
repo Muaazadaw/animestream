@@ -54,6 +54,9 @@ export default function Header() {
 
   const active = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
+  // The sign-in, invite and admin screens are full-page cards without the site chrome.
+  if (/^\/(gate|admin|settings\/anilist)(\/|$)/.test(pathname)) return null;
+
   return (
     <>
       <aside className="rail">
@@ -83,12 +86,7 @@ export default function Header() {
               <Icon name="power" size={20} />
               <span className="rail__label">Log out</span>
             </button>
-          ) : (
-            <Link href="/settings#account" className="rail__item" title="Sign in" onClick={(e) => (e.preventDefault(), openSettings("profile"))}>
-              <Icon name="user" size={20} />
-              <span className="rail__label">Sign in</span>
-            </Link>
-          )}
+          ) : null}
         </div>
       </aside>
 
