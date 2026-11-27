@@ -38,12 +38,10 @@ export default async function HomePage() {
       <div className="container home">
         <ContinueWatching />
 
-        <div className="home__split">
-          <LatestEpisodes items={home.latest} />
-          <aside className="home__side">
-            <SideList title="Top Airing" items={home.topAiring} />
-            <SideList title="Upcoming" items={home.upcomingSoon} upcoming />
-          </aside>
+        <LatestEpisodes items={home.latest} />
+        <div className="home__lists">
+          <SideList title="Top Airing" items={home.topAiring} />
+          <SideList title="Upcoming" items={home.upcomingSoon} upcoming />
         </div>
 
         <Row title={`Popular this season · ${home.seasonLabel}`} href="/trending">

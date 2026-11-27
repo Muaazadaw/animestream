@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { prettyEnum, statusDot, titleOf, type LatestEpisode } from "@/lib/anilist";
 import { Icon } from "./Menu";
 
-const PER_PAGE = 14;
+const PER_PAGE = 21;
 
 function ago(airingAt: number) {
   const s = Date.now() / 1000 - airingAt;

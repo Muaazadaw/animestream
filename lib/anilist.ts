@@ -116,6 +116,7 @@ export async function getHome() {
     airing: Page;
     soon: Page;
     latest: { airingSchedules: (LatestEpisode & { media: MediaCard & { isAdult: boolean; popularity: number } })[] };
+    latest2: { airingSchedules: (LatestEpisode & { media: MediaCard & { isAdult: boolean; popularity: number } })[] };
   }>(
     `query ($season: MediaSeason, $year: Int, $nSeason: MediaSeason, $nYear: Int, $since: Int, $now: Int) {
       trending: Page(perPage: 20) { media(type: ANIME, sort: TRENDING_DESC, isAdult: false) { ${CARD_FIELDS} description(asHtml: false) } }
@@ -125,7 +126,12 @@ export async function getHome() {
       popular: Page(perPage: 20) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
       airing: Page(perPage: 10) { media(type: ANIME, status: RELEASING, sort: TRENDING_DESC, isAdult: false) { ${CARD_FIELDS} } }
       soon: Page(perPage: 10) { media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC, isAdult: false) { ${CARD_FIELDS} } }
-      latest: Page(perPage: 50) {
+      latest: Page(page: 1, perPage: 50) {
+        airingSchedules(airingAt_greater: $since, airingAt_lesser: $now, sort: TIME_DESC) {
+          episode airingAt media { ${CARD_FIELDS} isAdult popularity }
+        }
+      }
+      latest2: Page(page: 2, perPage: 50) {
         airingSchedules(airingAt_greater: $since, airingAt_lesser: $now, sort: TIME_DESC) {
           episode airingAt media { ${CARD_FIELDS} isAdult popularity }
         }
@@ -136,7 +142,7 @@ export async function getHome() {
       year: now.year,
       nSeason: next.season,
       nYear: next.year,
-      since: nowTs - 4 * 86400,
+      since: nowTs - 7 * 86400,
       now: nowTs,
     },
     900,
@@ -145,7 +151,7 @@ export async function getHome() {
   // One entry per show (its newest episode), skipping adult and very obscure titles.
   const seen = new Set<number>();
   const latest: LatestEpisode[] = [];
-  for (const s of data.latest.airingSchedules) {
+  for (const s of [...data.latest.airingSchedules, ...data.latest2.airingSchedules]) {
     if (s.media.isAdult || s.media.popularity < 2000 || seen.has(s.media.id)) continue;
     seen.add(s.media.id);
     latest.push(s);
