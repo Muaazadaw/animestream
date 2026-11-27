@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import SettingsModal from "@/components/SettingsModal";
 import SyncClient from "@/components/SyncClient";
 import { APPEARANCE_SCRIPT } from "@/lib/appearance";
+import { UPDATED, UPDATES, VERSION } from "@/lib/version";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -44,6 +45,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <p>
             Mayoi · Anime data from <a href="https://anilist.co" target="_blank" rel="noreferrer">AniList</a>.
             This site does not host any files on its servers unless configured by the site owner.
+          </p>
+          <p className="footer__ver" title={`Last updated ${UPDATED}`}>
+            <span>v{VERSION}</span> · {UPDATES.toLocaleString()} updates
           </p>
         </footer>
       </body>

@@ -1885,3 +1885,7 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .cw__frame:hover .cw__x, .cw__x:focus-visible { opacity: 1; }
 .cw__x:hover { background: rgba(0, 0, 0, 0.75); }
 @media (hover: none) { .cw__x { opacity: 1; } }
+
+/* Footer: version and update count */
+.footer__ver { margin-top: 6px; font-size: 12px; color: #6f6f7c; }
+.footer__ver span { padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -1,0 +1,20 @@
+#!/bin/sh
+# Bumps the site's version (lib/version.ts) on every commit, so the footer
+# always shows how many updates Mayoi has had. The count is the number of
+# commits including this one. Enabled with: git config core.hooksPath .githooks
+
+n=$(( $(git rev-list --count HEAD 2>/dev/null || echo 0) + 1 ))
+today=$(date +%Y-%m-%d)
+
+cat > lib/version.ts <<EOF
+// Written by .githooks/pre-commit on every commit. Don't edit by hand.
+
+/** How many updates (commits) the site has had. */
+export const UPDATES = $n;
+/** Shown in the footer. */
+export const VERSION = \`1.\${UPDATES}\`;
+/** Day of the latest update. */
+export const UPDATED = "$today";
+EOF
+
+git add lib/version.ts
