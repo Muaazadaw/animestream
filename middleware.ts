@@ -60,6 +60,10 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next's own files and the site icon.
-  matcher: ["/((?!_next/static|_next/image|icon.svg|favicon.ico|robots.txt).*)"],
+  // Everything except Next's own files and what a phone needs to install the app
+  // (icons, manifest, service worker, offline screen, Android app verification),
+  // which browsers fetch without a login.
+  matcher: [
+    "/((?!_next/static|_next/image|icon.svg|favicon.ico|robots.txt|apple-icon.png|icons/|manifest.webmanifest|sw.js|offline.html|\\.well-known/).*)",
+  ],
 };

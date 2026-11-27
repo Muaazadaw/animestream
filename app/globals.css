@@ -1289,3 +1289,33 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 .gate__anilist:hover:not(:disabled) { filter: none; border-color: #3db4f2; background: #151b27; }
 .gate__or { display: flex; align-items: center; gap: 12px; width: 100%; color: #6f6f7c; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
 .gate__or::before, .gate__or::after { content: ""; flex: 1; height: 1px; background: #24242c; }
+
+/* Installed app / phones: keep clear of the notch and the home bar */
+:root { --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
+.topbar { padding-top: var(--safe-top); height: calc(var(--topbar) + var(--safe-top)); }
+@media (max-width: 760px) {
+  body { padding-bottom: calc(60px + var(--safe-bottom)); }
+  .rail { height: calc(60px + var(--safe-bottom)); padding-bottom: var(--safe-bottom); }
+}
+.gate, .admin, .smodal { padding-top: max(24px, var(--safe-top)); padding-bottom: max(24px, var(--safe-bottom)); }
+
+/* "Install Mayoi" card */
+.install {
+  position: fixed; left: 50%; bottom: calc(16px + var(--safe-bottom)); z-index: 150; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; width: min(440px, calc(100% - 24px)); padding: 12px 12px 12px 14px;
+  border-radius: 14px; border: 1px solid #2a2a33; background: rgba(18, 18, 24, 0.97); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  animation: install-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes install-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+@media (max-width: 760px) { .install { bottom: calc(72px + var(--safe-bottom)); } }
+.install .logo-mark { flex-shrink: 0; border-radius: 10px; }
+.install__text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; font-size: 13px; color: #b9b9c6; }
+.install__text strong { font-size: 14px; color: var(--text); }
+.install__btn { height: 34px; padding: 0 14px; border: 0; border-radius: 8px; font-weight: 800; color: #fff; cursor: pointer; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.install__close { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: #8b8b99; cursor: pointer; }
+.install__close:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+
+/* In the installed app there's no browser bar, so let the app feel native */
+@media (display-mode: standalone) {
+  body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
+}
