@@ -54,6 +54,44 @@ export async function getHeroArt(id: number): Promise<{ backdrop: string | null;
   return { backdrop: find("fanart"), logo: logo && /\.png$/i.test(logo) ? logo : null };
 }
 
+/**
+ * Pixel size of a JPEG, PNG or WebP image, read from the first 64 KB of the file instead of
+ * downloading all of it. Null if it can't be read.
+ */
+export async function imageSize(url: string): Promise<{ w: number; h: number } | null> {
+  try {
+    const res = await fetch(url, { headers: { Range: "bytes=0-65535" }, next: { revalidate: 86400 } });
+    if (!res.ok) return null;
+    const b = new Uint8Array(await res.arrayBuffer());
+    const u16 = (i: number) => (b[i] << 8) | b[i + 1];
+    const u32 = (i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+    // PNG: width and height sit in the IHDR chunk.
+    if (b[0] === 0x89 && b[1] === 0x50) return { w: u32(16), h: u32(20) };
+    // WebP (lossy VP8 / lossless VP8L / extended VP8X).
+    if (b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+      const kind = String.fromCharCode(b[12], b[13], b[14], b[15]);
+      if (kind === "VP8 ") return { w: ((b[27] << 8) | b[26]) & 0x3fff, h: ((b[29] << 8) | b[28]) & 0x3fff };
+      if (kind === "VP8L") return { w: 1 + (((b[22] & 0x3f) << 8) | b[21]), h: 1 + (((b[24] & 0xf) << 10) | (b[23] << 2) | ((b[22] & 0xc0) >> 6)) };
+      if (kind === "VP8X") return { w: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)), h: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)) };
+      return null;
+    }
+    // JPEG: walk the markers to the first start-of-frame.
+    if (b[0] !== 0xff || b[1] !== 0xd8) return null;
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) return null;
+      const marker = b[i + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { w: u16(i + 7), h: u16(i + 5) };
+      }
+      i += 2 + u16(i + 2);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Episode titles, synopses, stills and air dates, keyed by episode number. */
 export async function getEpisodeMeta(m: MediaDetail): Promise<Record<number, EpisodeMeta>> {
   const out: Record<number, EpisodeMeta> = {};

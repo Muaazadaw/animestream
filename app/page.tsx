@@ -5,7 +5,7 @@ import LatestEpisodes from "@/components/LatestEpisodes";
 import Row from "@/components/Row";
 import SideList from "@/components/SideList";
 import { airedEpisodes, getHome, plainText, titleOf } from "@/lib/anilist";
-import { getHeroArt } from "@/lib/extras";
+import { getHeroArt, imageSize } from "@/lib/extras";
 
 export const revalidate = 900;
 
@@ -14,10 +14,25 @@ export default async function HomePage() {
 
   const candidates = home.trending.slice(0, 20);
   const art = await Promise.all(candidates.map((m) => getHeroArt(m.id).catch(() => ({ backdrop: null, logo: null }))));
-  // Shows with TVDB's 1080p backdrop come first. AniList's banner is a ~1900×500 strip that turns
-  // blurry when stretched to the hero, so it only fills in when there aren't enough HD ones.
-  const withArt = candidates.map((m, i) => ({ m, art: art[i], banner: art[i].backdrop ?? m.bannerImage }));
-  const picks = [...withArt.filter((p) => p.art.backdrop), ...withArt.filter((p) => !p.art.backdrop && p.banner)].slice(0, 10);
+  // For each show, measure both AniList's banner and TVDB's backdrop and keep whichever needs the
+  // least upscaling to cover a typical 1920×690 hero. Sharp slides come first, in trending order.
+  const scored = await Promise.all(
+    candidates.map(async (m, i) => {
+      const options = [m.bannerImage, art[i].backdrop].filter((u): u is string => !!u);
+      const sizes = await Promise.all(options.map(imageSize));
+      let best: { banner: string; stretch: number } | null = null;
+      options.forEach((url, k) => {
+        const s = sizes[k];
+        const stretch = s ? Math.max(1920 / s.w, 690 / s.h) : 9;
+        if (!best || stretch < best.stretch) best = { banner: url, stretch };
+      });
+      return best ? { m, art: art[i], ...(best as { banner: string; stretch: number }) } : null;
+    }),
+  );
+  const usable = scored.filter((p) => p !== null);
+  const sharp = usable.filter((p) => p.stretch <= 1.15);
+  const soft = usable.filter((p) => p.stretch > 1.15).sort((a, b) => a.stretch - b.stretch);
+  const picks = [...sharp, ...soft].slice(0, 10);
   const hero: HeroItem[] = picks.map(({ m, art, banner }) => {
     const eps = m.episodes ?? airedEpisodes(m);
     return {
