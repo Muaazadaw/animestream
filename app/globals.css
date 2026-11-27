@@ -1101,17 +1101,3 @@ kbd { min-width: 28px; padding: 3px 8px; border-radius: 6px; border: 1px solid v
   .sset__ver, .sset__close { display: none; }
   .srow { flex-wrap: wrap; }
 }
-
-/* Watch page: poster with a play button while the episode list / stream loads */
-.player--poster { background: #000 center / cover no-repeat; }
-.player--poster::before { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, 0.35); }
-.player__bigplay {
-  position: relative; z-index: 1; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; padding-left: 4px;
-  background: rgba(255, 255, 255, 0.92); color: #111; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.5);
-}
-.player__bigplay svg { fill: currentColor; }
-.player__bigplay.is-loading::after {
-  content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--accent-2);
-  animation: spin 0.9s linear infinite;
-}
-.player--poster .player__error { z-index: 2; }
