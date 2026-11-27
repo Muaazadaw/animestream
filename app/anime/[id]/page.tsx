@@ -8,7 +8,6 @@ import Countdown from "@/components/Countdown";
 import Row from "@/components/Row";
 import Trailer from "@/components/Trailer";
 import WatchlistButton from "@/components/WatchlistButton";
-import WhereToWatch from "@/components/WhereToWatch";
 import { getArtwork, getCharacters, getEpisodeMeta } from "@/lib/extras";
 import { airedEpisodes, getAnime, plainText, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
 
@@ -67,6 +66,14 @@ export default async function AnimePage({ params }: Props) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="detail__cover" src={m.coverImage.extraLarge ?? m.coverImage.large ?? undefined} alt={title} />
         <div className="detail__info">
+          {/* Format, year, status, score and season, tinted with the cover's colour. */}
+          <div className="dchips" style={{ "--chip": m.coverImage.color ?? "#c8935a" } as React.CSSProperties}>
+            {m.format ? <span>{prettyEnum(m.format)}</span> : null}
+            {m.seasonYear ?? m.startDate.year ? <span>{m.seasonYear ?? m.startDate.year}</span> : null}
+            {m.status ? <span>{m.status === "RELEASING" ? "Airing" : m.status === "NOT_YET_RELEASED" ? "Upcoming" : prettyEnum(m.status)}</span> : null}
+            {m.averageScore ? <span>{m.averageScore}%</span> : null}
+            {m.season ? <span>{prettyEnum(m.season)}</span> : null}
+          </div>
           <h1>{title}</h1>
           {m.title.native ? <div className="detail__native">{m.title.native}</div> : null}
           <div className="hero__genres">
@@ -94,7 +101,6 @@ export default async function AnimePage({ params }: Props) {
             />
           </div>
           <p className="detail__desc">{plainText(m.description)}</p>
-          <WhereToWatch links={m.externalLinks} />
         </div>
         <aside className="facts">
           {facts

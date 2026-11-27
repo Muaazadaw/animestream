@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import WhereToWatch from "@/components/WhereToWatch";
 import { getAnime, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
 import type { SideMedia } from "@/components/SideMediaList";
 import { getEpisodeMeta } from "@/lib/extras";
@@ -79,7 +78,6 @@ export default async function WatchPage({ params, searchParams }: Props) {
       <div className="container page">
         <h1 className="page__title">{title}</h1>
         <p className="empty">No episodes are available on this site for this title yet.</p>
-        <WhereToWatch links={m.externalLinks} />
         <p>
           <Link href={`/anime/${m.id}`}>← Back to details</Link>
         </p>
