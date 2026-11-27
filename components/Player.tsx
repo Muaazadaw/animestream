@@ -4,6 +4,7 @@ import Hls from "hls.js";
 import type Plyr from "plyr";
 import "plyr/dist/plyr.css";
 import { useEffect, useRef, useState } from "react";
+import { startAnime4K, type UpscaleMode } from "@/lib/anime4k";
 import type { Stream } from "@/lib/sources/types";
 
 // Video player built on Plyr (controls, captions, settings, keyboard) with
@@ -32,6 +33,8 @@ type Props = {
   hasNext: boolean;
   onNext: () => void;
   onProgress: (time: number, duration: number) => void;
+  /** Anime4K upscaling mode ("off" by default). */
+  upscale?: UpscaleMode;
 };
 
 // Fansub look: bold white text, thick black outline, no box. fontSize is the
@@ -63,7 +66,18 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-export default function Player({ stream, poster, startAt, autoSkip, autoplayNext, autoStart = true, hasNext, onNext, onProgress }: Props) {
+export default function Player({
+  stream,
+  poster,
+  startAt,
+  autoSkip,
+  autoplayNext,
+  autoStart = true,
+  hasNext,
+  onNext,
+  onProgress,
+  upscale = "off",
+}: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const plyrRef = useRef<Plyr | null>(null);
@@ -76,6 +90,7 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
   const [buffering, setBuffering] = useState(true);
   const [subs, setSubs] = useState<SubtitleSettings>(DEFAULT_SUBTITLE_SETTINGS);
   const [showSubs, setShowSubs] = useState(false);
+  const [a4k, setA4k] = useState<{ on: boolean; error: string | null }>({ on: false, error: null });
 
   const cb = useRef({ onProgress, onNext, autoSkip, autoplayNext, hasNext, stream });
   cb.current = { onProgress, onNext, autoSkip, autoplayNext, hasNext, stream };
@@ -287,6 +302,41 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream]);
 
+  // Anime4K: draw the video through the upscaling shaders once Plyr has wrapped it.
+  useEffect(() => {
+    const video = videoRef.current;
+    setA4k({ on: false, error: null });
+    if (!video || upscale === "off") return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const report = (error: string) => !cancelled && setA4k({ on: false, error });
+    const begin = (tries = 0) => {
+      if (cancelled) return;
+      // Plyr is set up asynchronously; wait until it has wrapped the video.
+      if (!video.parentElement?.classList.contains("plyr__video-wrapper") && tries < 40) {
+        timer = setTimeout(() => begin(tries + 1), 150);
+        return;
+      }
+      startAnime4K(video, upscale, report)
+        .then((s) => (cancelled ? s() : ((stop = s), setA4k({ on: true, error: null }))))
+        .catch((e: Error) => report(e.message));
+    };
+    begin();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      stop?.();
+    };
+  }, [upscale, stream]);
+
+  // Errors fade after a few seconds.
+  useEffect(() => {
+    if (!a4k.error) return;
+    const t = setTimeout(() => setA4k((s) => ({ ...s, error: null })), 6000);
+    return () => clearTimeout(t);
+  }, [a4k.error]);
+
   // Shift subtitle cues when the delay setting changes (and once tracks load).
   useEffect(() => {
     const video = videoRef.current;
@@ -375,6 +425,9 @@ export default function Player({ stream, poster, startAt, autoSkip, autoplayNext
         ) : null}
 
         {buffering && !error ? <div className="spinner player__spinner player__spinner--center" /> : null}
+
+        {a4k.on ? <span className="player__a4k" title="Anime4K upscaling is on">Anime4K {upscale}</span> : null}
+        {a4k.error ? <div className="player__a4k-error">{a4k.error}</div> : null}
 
         {error ? <div className="player__error">{error}</div> : null}
 

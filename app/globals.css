@@ -1788,3 +1788,16 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
   .sset--modal, .asheet, .sset.is-section .sset__main { animation: none; }
 }
 .topbar:has(.asheet) { z-index: 210; }
+
+/* Anime4K: upscaled canvas over the video, under captions and controls */
+.a4k-canvas { position: absolute; z-index: 1; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+.player--plyr .plyr__captions { z-index: 3; }
+.player__a4k {
+  position: absolute; top: 10px; left: 10px; z-index: 6; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800;
+  background: rgba(0, 0, 0, 0.6); color: #c4b5fd; pointer-events: none; opacity: 0; transition: opacity 0.2s;
+}
+.player--plyr:hover .player__a4k { opacity: 1; }
+.player__a4k-error {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; max-width: calc(100% - 20px); padding: 8px 12px;
+  border-radius: 8px; background: rgba(20, 20, 28, 0.92); border: 1px solid var(--line); font-size: 13px; text-align: center;
+}
