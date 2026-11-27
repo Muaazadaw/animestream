@@ -94,6 +94,37 @@ export async function getChapters(mangaDexId: string): Promise<Chapter[]> {
   return [...byNumber.values()].sort((x, y) => parseFloat(x.number) - parseFloat(y.number));
 }
 
+/**
+ * English chapter names MangaDex knows, by chapter number ("12", "12.5"), including
+ * chapters it only links to elsewhere. Used to name chapters from other sources.
+ * Reuses getChapters' requests, which Next has already cached.
+ */
+export async function getChapterTitles(mangaDexId: string): Promise<Map<string, string>> {
+  const titles = new Map<string, string>();
+  for (let offset = 0; offset < 5000; offset += 500) {
+    const data = await get<{ data: MdChapter[]; total: number }>(
+      `/manga/${mangaDexId}/feed`,
+      [
+        ["translatedLanguage[]", "en"],
+        ["includes[]", "scanlation_group"],
+        ["order[chapter]", "asc"],
+        ["limit", "500"],
+        ["offset", String(offset)],
+        ...RATINGS.map((r): [string, string] => ["contentRating[]", r]),
+      ],
+      600,
+    );
+    if (!data) break;
+    for (const c of data.data) {
+      const n = c.attributes.chapter;
+      const t = c.attributes.title?.trim();
+      if (n && t && !titles.has(String(parseFloat(n)))) titles.set(String(parseFloat(n)), t);
+    }
+    if (offset + 500 >= data.total) break;
+  }
+  return titles;
+}
+
 /** Page image URLs for a chapter (full quality and data-saver). They stay valid for ~15 minutes. */
 export async function getChapterPages(
   chapterId: string,
