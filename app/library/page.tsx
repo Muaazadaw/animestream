@@ -28,6 +28,7 @@ import {
 } from "@/lib/storage";
 import { useAccount } from "@/lib/sync";
 import { getMode } from "@/lib/mode";
+import { openListEditor } from "@/lib/list-editor";
 import { openSettings } from "@/lib/settings-modal";
 
 type Entry = ListEntry & { favorite: boolean };
@@ -85,8 +86,8 @@ function useLibrary() {
   return { entries, custom };
 }
 
-function CardMenu({ entry, custom }: { entry: Entry; custom: CustomList[] }) {
-  const [open, setOpen] = useState(false);
+/** The status badge on a card: opens the list editor (status, progress, score, dates, notes…). */
+function CardMenu({ entry }: { entry: Entry; custom: CustomList[] }) {
   const anime: SavedAnime = {
     id: entry.id,
     title: entry.title,
@@ -96,39 +97,10 @@ function CardMenu({ entry, custom }: { entry: Entry; custom: CustomList[] }) {
     ...(isManga(entry) ? { type: "MANGA" as const, chapters: entry.chapters ?? null } : {}),
   };
   return (
-    <div className="lcard__menu" onMouseLeave={() => setOpen(false)}>
-      <button className="lcard__badge" onClick={(e) => (e.preventDefault(), setOpen(!open))} aria-label="Change list">
+    <div className="lcard__menu">
+      <button className="lcard__badge" onClick={(e) => (e.preventDefault(), openListEditor(anime))} aria-label="Edit list entry" title="Edit list entry">
         <Icon name={STATUS_ICON[entry.status]} size={14} />
       </button>
-      {open ? (
-        <div className="lcard__pop" onClick={(e) => e.preventDefault()}>
-          {SIDEBAR_ORDER.map((s) => (
-            <button key={s} className={entry.status === s ? "is-active" : ""} onClick={() => setListStatus(anime, s)}>
-              <Icon name={STATUS_ICON[s]} size={14} /> {STATUS_LABEL[s]}
-            </button>
-          ))}
-          <hr />
-          <button className={entry.favorite ? "is-active" : ""} onClick={() => toggleFavorite(anime)}>
-            <Icon name="heart" size={14} /> {entry.favorite ? "Unfavourite" : "Favourite"}
-          </button>
-          {custom.map((c) => (
-            <button key={c.id} className={c.items.some((a) => a.id === entry.id) ? "is-active" : ""} onClick={() => toggleInCustomList(c.id, anime)}>
-              <Icon name="plus" size={14} /> {c.name}
-            </button>
-          ))}
-          <hr />
-          <button
-            className="danger"
-            onClick={() => {
-              setListStatus(anime, null);
-              if (inWatchlist(anime.id)) toggleWatchlist(anime);
-              if (entry.favorite) toggleFavorite(anime);
-            }}
-          >
-            <Icon name="trash" size={14} /> Remove
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

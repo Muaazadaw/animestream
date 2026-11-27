@@ -50,6 +50,12 @@ export type ListEntry = SavedAnime & {
   score: number;
   updatedAt: number;
   from?: "anilist" | "mal" | "site";
+  /** "YYYY-MM-DD"; null when cleared, missing when never set. */
+  startedAt?: string | null;
+  completedAt?: string | null;
+  /** Times rewatched / reread. */
+  repeat?: number;
+  notes?: string | null;
 };
 
 /** Playback position of one episode; key is "<animeId>:<episode>". */

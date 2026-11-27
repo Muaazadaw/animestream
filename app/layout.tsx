@@ -3,6 +3,7 @@ import { Roboto } from "next/font/google";
 import AppearanceClient from "@/components/AppearanceClient";
 import PwaClient from "@/components/PwaClient";
 import Header from "@/components/Header";
+import ListEditor from "@/components/ListEditor";
 import SettingsModal from "@/components/SettingsModal";
 import SyncClient from "@/components/SyncClient";
 import { APPEARANCE_SCRIPT } from "@/lib/appearance";
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AppearanceClient />
         <PwaClient />
         <SettingsModal />
+        <ListEditor />
         <Header />
         <main>{children}</main>
         <footer className="footer">

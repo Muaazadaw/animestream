@@ -15,7 +15,27 @@ export type ImportMedia = {
   chapters?: number | null;
 };
 
-export type ImportedEntry = { media: ImportMedia; status: ListStatus; progress: number; score: number; updatedAt: number };
+export type ImportedEntry = {
+  media: ImportMedia;
+  status: ListStatus;
+  progress: number;
+  score: number;
+  updatedAt: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  repeat?: number;
+  notes?: string | null;
+};
+
+type FuzzyDate = { year: number | null; month: number | null; day: number | null } | null;
+const ENTRY_FIELDS = "status progress score(format: POINT_100) updatedAt startedAt { year month day } completedAt { year month day } repeat notes";
+
+/** AniList's { year, month, day } as "YYYY-MM-DD" (missing parts become 01), or null. */
+function dateString(d: FuzzyDate): string | null {
+  if (!d?.year) return null;
+  const pad = (n: number | null) => String(n ?? 1).padStart(2, "0");
+  return `${d.year}-${pad(d.month)}-${pad(d.day)}`;
+}
 
 export const IMPORT_MEDIA_FIELDS = "id idMal title { romaji english native userPreferred } coverImage { large } format episodes type chapters";
 
@@ -29,15 +49,27 @@ export const ANILIST_USER_LISTS_QUERY = `query ($user: String, $userId: Int) {
     }
   }
   MediaListCollection(userName: $user, userId: $userId, type: ANIME) {
-    lists { entries { status progress score(format: POINT_100) updatedAt media { ${IMPORT_MEDIA_FIELDS} } } }
+    lists { entries { ${ENTRY_FIELDS} media { ${IMPORT_MEDIA_FIELDS} } } }
   }
   mangaLists: MediaListCollection(userName: $user, userId: $userId, type: MANGA) {
-    lists { entries { status progress score(format: POINT_100) updatedAt media { ${IMPORT_MEDIA_FIELDS} } } }
+    lists { entries { ${ENTRY_FIELDS} media { ${IMPORT_MEDIA_FIELDS} } } }
   }
 }`;
 
 type AniListLists = {
-  lists: { entries: { status: ListStatus; progress: number; score: number; updatedAt: number; media: ImportMedia }[] }[];
+  lists: {
+    entries: {
+      status: ListStatus;
+      progress: number;
+      score: number;
+      updatedAt: number;
+      startedAt?: FuzzyDate;
+      completedAt?: FuzzyDate;
+      repeat?: number | null;
+      notes?: string | null;
+      media: ImportMedia;
+    }[];
+  }[];
 };
 
 export type AniListUserListsData = {
@@ -59,7 +91,16 @@ export function favouritesFromAniList(data: AniListUserListsData): ImportMedia[]
 
 export function entriesFromAniList(data: AniListUserListsData): ImportedEntry[] {
   return [data.MediaListCollection, data.mangaLists].flatMap((c) =>
-    (c?.lists ?? []).flatMap((l) => l.entries.map((e) => ({ ...e, updatedAt: (e.updatedAt || 0) * 1000 }))),
+    (c?.lists ?? []).flatMap((l) =>
+      l.entries.map((e) => ({
+        ...e,
+        updatedAt: (e.updatedAt || 0) * 1000,
+        startedAt: dateString(e.startedAt ?? null),
+        completedAt: dateString(e.completedAt ?? null),
+        repeat: e.repeat ?? 0,
+        notes: e.notes || null,
+      })),
+    ),
   );
 }
 
@@ -73,7 +114,15 @@ export function toLibraryState(entries: ImportedEntry[], from: "anilist" | "mal"
   const history: HistoryEntry[] = [];
   for (const e of entries) {
     const anime = savedAnime(e.media);
-    lists[anime.id] = { ...anime, status: e.status, progress: e.progress, score: e.score, updatedAt: e.updatedAt, from };
+    lists[anime.id] = {
+      ...anime,
+      status: e.status,
+      progress: e.progress,
+      score: e.score,
+      updatedAt: e.updatedAt,
+      from,
+      ...(e.startedAt !== undefined ? { startedAt: e.startedAt, completedAt: e.completedAt, repeat: e.repeat, notes: e.notes } : {}),
+    };
 
     // Shows in progress go to "continue watching", on the next unwatched episode.
     if (anime.type !== "MANGA" && (e.status === "CURRENT" || e.status === "REPEATING")) {

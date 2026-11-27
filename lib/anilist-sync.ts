@@ -153,11 +153,28 @@ async function pushPending() {
           await gql("mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }", { id: found.MediaList.id }, link.token);
         }
       } else {
+        // Dates go as { year, month, day }; an emptied date is sent as all nulls to clear it.
+        const date = (d: string | null | undefined) => {
+          if (d === undefined) return undefined;
+          const [year, month, day] = (d ?? "").split("-").map(Number);
+          return d ? { year, month, day } : { year: null, month: null, day: null };
+        };
         await gql(
-          `mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
-            SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id }
+          `mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: Int, $repeat: Int, $notes: String,
+                     $startedAt: FuzzyDateInput, $completedAt: FuzzyDateInput) {
+            SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, scoreRaw: $scoreRaw, repeat: $repeat,
+                               notes: $notes, startedAt: $startedAt, completedAt: $completedAt) { id }
           }`,
-          { mediaId: change.id, status: change.status, progress: change.progress },
+          {
+            mediaId: change.id,
+            status: change.status,
+            progress: change.progress,
+            scoreRaw: change.score,
+            repeat: change.repeat,
+            notes: change.notes === undefined ? undefined : (change.notes ?? ""),
+            startedAt: date(change.startedAt),
+            completedAt: date(change.completedAt),
+          },
           link.token,
         );
       }

@@ -117,6 +117,7 @@ export function saveProgress(entry: Omit<HistoryEntry, "updatedAt">) {
         progress: entry.episode,
         score: cur?.score ?? 0,
         from: cur?.from ?? "site",
+        ...keepDetails(cur, done ? "COMPLETED" : "CURRENT"),
       });
     }
   }
@@ -149,6 +150,20 @@ export function getLists(): Record<string, ListEntry> {
   return read<Record<string, ListEntry>>(LISTS_KEY, {});
 }
 
+/**
+ * The fields a quick change (status menu, finishing an episode) shouldn't lose:
+ * dates, rewatches and notes. Fills the start / end date like AniList does.
+ */
+function keepDetails(cur: ListEntry | undefined, status: ListStatus) {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    startedAt: cur?.startedAt ?? (status === "CURRENT" || status === "COMPLETED" ? today : undefined),
+    completedAt: cur?.completedAt ?? (status === "COMPLETED" ? today : undefined),
+    repeat: cur?.repeat,
+    notes: cur?.notes,
+  };
+}
+
 export function setListEntry(entry: Omit<ListEntry, "updatedAt">) {
   const full = { ...entry, updatedAt: Date.now() };
   write(LISTS_KEY, { ...getLists(), [entry.id]: full });
@@ -174,6 +189,7 @@ export function markChapterRead(manga: SavedAnime, chapter: number) {
     progress: n,
     score: cur?.score ?? 0,
     from: cur?.from ?? "site",
+    ...keepDetails(cur, done ? "COMPLETED" : "CURRENT"),
   });
 }
 
@@ -186,7 +202,14 @@ export function setListStatus(anime: SavedAnime, status: ListStatus | null) {
     return;
   }
   const cur = lists[anime.id];
-  setListEntry({ ...anime, status, progress: cur?.progress ?? 0, score: cur?.score ?? 0, from: cur?.from ?? "site" });
+  setListEntry({
+    ...anime,
+    status,
+    progress: cur?.progress ?? 0,
+    score: cur?.score ?? 0,
+    from: cur?.from ?? "site",
+    ...keepDetails(cur, status),
+  });
 }
 
 export function getFavorites(): Record<string, Favorite> {

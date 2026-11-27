@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getLists, setListStatus, STORAGE_EVENT, type ListEntry, type SavedAnime } from "@/lib/storage";
 import type { ListStatus } from "@/lib/state";
+import { openListEditor } from "@/lib/list-editor";
 import Menu, { Icon, MenuItem } from "./Menu";
 
 const STATUSES: { id: ListStatus; label: string; icon: string }[] = [
@@ -42,6 +43,9 @@ export default function ListStatusMenu({ anime }: { anime: SavedAnime }) {
               {s.label}
             </MenuItem>
           ))}
+          <MenuItem icon={<Icon name="list" size={15} />} onClick={() => (close(), openListEditor(anime))}>
+            Edit entry…
+          </MenuItem>
           {entry ? (
             <MenuItem icon={<Icon name="trash" size={15} />} onClick={() => (setListStatus(anime, null), close())}>
               Remove from list
