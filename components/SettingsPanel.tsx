@@ -785,6 +785,7 @@ const SHORTCUTS: Record<string, [string, string][]> = {
   "keys-watching": [
     ["N", "Next episode"],
     ["S", "Skip intro or outro"],
+    ["Shift+Enter", "Skip ahead 1:30"],
   ],
   "keys-player": [
     ["Space / K", "Play or pause"],

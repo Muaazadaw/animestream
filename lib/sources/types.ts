@@ -43,6 +43,8 @@ export type TimeRange = { start: number; end: number };
 
 export type Stream = {
   sources: StreamSource[];
+  /** For streams carrying several audio languages: the one to play ("ja" for sub, "en" for dub). */
+  audioLang?: string;
   subtitles?: SubtitleTrack[];
   intro?: TimeRange;
   outro?: TimeRange;

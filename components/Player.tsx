@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { setUpscaleMode, startAnime4K, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
 import { hlsBuffers, perfTier } from "@/lib/device";
 import type { Stream } from "@/lib/sources/types";
+import { keepAudioLanguage } from "@/lib/audio-track";
+import { useSeekPreview } from "./useSeekPreview";
 
 // Video player built on Plyr (controls, captions, settings, keyboard) with
 // hls.js for adaptive streams. The <video> element is created imperatively,
@@ -165,6 +167,9 @@ export default function Player({
   const cb = useRef({ onProgress, onNext, autoSkip, autoplayNext, hasNext, stream });
   cb.current = { onProgress, onNext, autoSkip, autoplayNext, hasNext, stream };
 
+  // Frame previews when hovering the seek bar.
+  useSeekPreview(hostRef, stream.sources[0], ".plyr__progress", stream.audioLang);
+
   useEffect(() => setSubs(loadSubtitleSettings()), []);
 
   useEffect(() => {
@@ -237,6 +242,7 @@ export default function Player({
           // Less video kept in memory on phones with little RAM.
           ...hlsBuffers(),
         });
+        keepAudioLanguage(hls, stream.audioLang);
         let recoveries = 0;
         let retries = 0;
         let srcIndex = 0;
@@ -444,11 +450,19 @@ export default function Player({
     return () => clearTimeout(timer);
   }, [nextIn]);
 
-  // Shortcuts Plyr doesn't have: S skips intro/outro, N plays the next episode.
+  // Shortcuts Plyr doesn't have: S skips intro/outro, N plays the next episode,
+  // Shift+Enter jumps 1:30 ahead (an opening's length).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Enter" && e.shiftKey) {
+        const video = videoRef.current;
+        if (!video) return;
+        e.preventDefault();
+        video.currentTime = Math.min(video.currentTime + 90, (video.duration || Infinity) - 0.5);
+        return;
+      }
       const k = e.key.toLowerCase();
       if (k === "s" && skip) doSkip(skip);
       if (k === "n" && cb.current.hasNext) cb.current.onNext();

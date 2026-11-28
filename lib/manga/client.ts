@@ -79,6 +79,8 @@ export function alternatives(sources: SourceChapters, number: string, skip: Set<
 export type ReaderPrefs = {
   /** One page, two pages side by side, or a long strip (webtoon). */
   mode: "single" | "double" | "vertical";
+  /** The layout picked for each kind of comic; unset ones use the default (strip for manhwa / manhua, single for manga). */
+  modes?: Partial<Record<"manga" | "webtoon", "single" | "double" | "vertical">>;
   /** Space between pages, in pixels. */
   margin: number;
   /** ↑ ↓ and Space: jump or glide. */

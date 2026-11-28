@@ -13,7 +13,7 @@ import {
   type Chapter,
   type ReaderPrefs,
 } from "@/lib/manga/client";
-import { sourceName, sourceOf } from "@/lib/manga/sources";
+import { MANGA_SOURCES, sourceName, sourceOf } from "@/lib/manga/sources";
 import { perfTier } from "@/lib/device";
 import { getLists, getPrefs, markChapterRead, type SavedAnime } from "@/lib/storage";
 import { Icon } from "./Menu";
@@ -85,10 +85,17 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   const endRef = useRef<HTMLDivElement>(null);
   const marked = useRef(false);
 
-  useEffect(() => setPrefsState(getReaderPrefs()), []);
+  // Layout is kept per kind of comic: manhwa / manhua (long vertical pages) open as a long
+  // strip, manga a page at a time, until you pick another layout for that kind.
+  const kind = ["KR", "CN", "TW"].includes(manga.countryOfOrigin ?? "") ? "webtoon" : "manga";
+  useEffect(() => {
+    const p = getReaderPrefs();
+    setPrefsState({ ...p, mode: p.modes?.[kind] ?? (kind === "webtoon" ? "vertical" : "single") });
+  }, [kind]);
   useEffect(() => setProgress(getLists()[manga.id]?.progress ?? 0), [manga.id, chapterId]);
   const setPrefs = (p: Partial<ReaderPrefs>) => {
     const next = { ...prefs, ...p };
+    if (p.mode) next.modes = { ...prefs.modes, [kind]: p.mode };
     setPrefsState(next);
     saveReaderPrefs(next);
   };
@@ -466,7 +473,13 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
                 alt={`Page ${page + 1}`}
                 referrerPolicy="no-referrer"
                 draggable={false}
-                onLoad={onPageShown}
+                onLoad={(e) => {
+                  // Webtoon-style pages (far taller than wide) fill the width and scroll,
+                  // instead of shrinking to a sliver to fit the screen height.
+                  const img = e.currentTarget;
+                  img.classList.toggle("is-tall", img.naturalHeight > img.naturalWidth * 2.5);
+                  onPageShown();
+                }}
                 onError={(e) => fallBackToDirect(e.currentTarget, src)}
               />
             ))}
@@ -592,7 +605,24 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           onClose={() => setPanel(null)}
         />
       ) : null}
-      {panel === "settings" ? <SettingsPanel prefs={prefs} setPrefs={setPrefs} onClose={() => setPanel(null)} /> : null}
+      {panel === "settings" ? (
+        <SettingsPanel
+          prefs={prefs}
+          setPrefs={setPrefs}
+          onClose={() => setPanel(null)}
+          number={number}
+          choices={MANGA_SOURCES.map((s) => ({
+            id: s.id,
+            name: s.name,
+            chapter: sources?.[s.id]?.find((c) => parseFloat(c.number) === parseFloat(number)) ?? null,
+          }))}
+          currentId={chapterId}
+          onPickSource={(c) => {
+            setPanel(null);
+            router.push(`/manga/${manga.id}/read/${c.id}`);
+          }}
+        />
+      ) : null}
       {panel === "help" ? <HelpPanel onClose={() => setPanel(null)} /> : null}
     </div>
   );
@@ -754,9 +784,28 @@ function Check({ checked, disabled, onChange, children }: { checked: boolean; di
   );
 }
 
-/** Reader settings, in two tabs like the layout / image split most readers use. */
-function SettingsPanel({ prefs, setPrefs, onClose }: { prefs: ReaderPrefs; setPrefs: (p: Partial<ReaderPrefs>) => void; onClose: () => void }) {
-  const [tab, setTab] = useState<"layout" | "image">("layout");
+/** One source's upload of the chapter being read (null: that source doesn't have this number). */
+type SourceChoice = { id: string; name: string; chapter: Chapter | null };
+
+/** Reader settings: layout, image, and which source this chapter is read from. */
+function SettingsPanel({
+  prefs,
+  setPrefs,
+  onClose,
+  number,
+  choices,
+  currentId,
+  onPickSource,
+}: {
+  prefs: ReaderPrefs;
+  setPrefs: (p: Partial<ReaderPrefs>) => void;
+  onClose: () => void;
+  number: string;
+  choices: SourceChoice[];
+  currentId: string;
+  onPickSource: (c: Chapter) => void;
+}) {
+  const [tab, setTab] = useState<"layout" | "image" | "sources">("layout");
   const d = DEFAULT_READER_PREFS;
   return (
     <aside className="rpanel rpanel--settings">
@@ -768,10 +817,40 @@ function SettingsPanel({ prefs, setPrefs, onClose }: { prefs: ReaderPrefs; setPr
           <button className={tab === "image" ? "is-active" : ""} onClick={() => setTab("image")}>
             Image
           </button>
+          <button className={tab === "sources" ? "is-active" : ""} onClick={() => setTab("sources")}>
+            Sources
+          </button>
         </div>
       </PanelHead>
 
-      {tab === "layout" ? (
+      {tab === "sources" ? (
+        <div className="rpanel__body">
+          <h4>Read chapter {number} from</h4>
+          <div className="rsources">
+            {choices.map((s) => {
+              const active = s.chapter?.id === currentId;
+              return (
+                <button
+                  key={s.id}
+                  className={`rsource ${active ? "is-active" : ""}`}
+                  disabled={!s.chapter || active}
+                  onClick={() => s.chapter && onPickSource(s.chapter)}
+                >
+                  <span className="rsource__name">{s.name}</span>
+                  <span className="rsource__meta">
+                    {active
+                      ? "Reading now"
+                      : !s.chapter
+                        ? "Doesn't have this chapter"
+                        : [s.chapter.group, s.chapter.pages ? `${s.chapter.pages} pages` : null].filter(Boolean).join(" · ") || "Available"}
+                  </span>
+                  {active ? <Icon name="check" size={16} /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : tab === "layout" ? (
         <div className="rpanel__body">
           <h4>Layout</h4>
           <div className="rtiles">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, useProfile } from "@/components/AccountMenu";
 import { HistoryCard, useHistory } from "@/components/ContinueWatching";
 import { Icon } from "@/components/Menu";
@@ -33,6 +33,11 @@ import { openSettings } from "@/lib/settings-modal";
 
 type Entry = ListEntry & { favorite: boolean };
 type View = "ALL" | "FAVORITES" | "HISTORY" | ListStatus | `custom:${string}`;
+
+/** The list picked last (All, a status, a custom list…), so the page reopens on it. */
+const VIEW_KEY = "as:library-view";
+const isView = (v: string): v is View =>
+  v === "ALL" || v === "FAVORITES" || v === "HISTORY" || LIST_STATUSES.some((s) => s.id === v) || v.startsWith("custom:");
 
 const STATUS_ICON: Record<ListStatus, string> = {
   CURRENT: "play",
@@ -125,11 +130,30 @@ export default function LibraryPage() {
   const [info, setInfo] = useState<Record<number, AnimeInfo>>({});
   const [newList, setNewList] = useState("");
 
-  // /library?view=history (from Settings) opens Continue watching.
+  // Opens on the list picked last time (so coming back from a show keeps it);
+  // /library?view=history (from Settings) opens Continue watching instead.
+  const restored = useRef(false);
   useEffect(() => {
     if (getMode() === "manga") setKind("MANGA");
     if (new URLSearchParams(window.location.search).get("view") === "history") setView("HISTORY");
+    else {
+      try {
+        const saved = localStorage.getItem(VIEW_KEY);
+        if (saved && isView(saved)) setView(saved);
+      } catch {
+        /* storage unavailable */
+      }
+    }
+    restored.current = true;
   }, []);
+  useEffect(() => {
+    if (!restored.current) return;
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [view]);
 
   // Year, score and airing status for the cards.
   const idsKey = entries.map((e) => e.id).sort((a, b) => a - b).join(",");
@@ -153,6 +177,10 @@ export default function LibraryPage() {
   }, [entries, kind]);
 
   const customView = view.startsWith("custom:") ? custom.find((c) => `custom:${c.id}` === view) : null;
+  // A remembered custom list that's since been deleted: back to All.
+  useEffect(() => {
+    if (restored.current && view.startsWith("custom:") && !customView) setView("ALL");
+  }, [view, customView]);
   // On the Manga tab, "Continue reading" is what you're reading now (watch history is anime only).
   const mangaHistory = kind === "MANGA";
   const continueReading = useMemo(

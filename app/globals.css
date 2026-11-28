@@ -328,6 +328,15 @@ body { padding-left: var(--rail); }
 .player:fullscreen { border-radius: 0; aspect-ratio: auto; }
 .player video { width: 100%; height: 100%; background: #000; }
 .player--placeholder { border: 1px solid var(--line); }
+/* Seek-bar frame preview (useSeekPreview): placed by script just above the player's own
+   time tooltip, inside the player area so the control strip can't clip it. */
+.seek-preview {
+  position: absolute; top: 0; transform: translateX(-50%); z-index: 30; pointer-events: none;
+  border-radius: 8px; overflow: hidden; border: 2px solid rgba(255, 255, 255, 0.9); background: #000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55); opacity: 0; transition: opacity 0.12s;
+}
+.seek-preview canvas { display: block; width: 176px; height: 99px; }
+.seek-preview.is-on.has-frame { opacity: 1; }
 .player__spinner { position: absolute; pointer-events: none; }
 .player__skip {
   position: absolute; right: 20px; bottom: 70px; padding: 10px 18px; border-radius: 8px; cursor: pointer;
@@ -1522,7 +1531,8 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 .reader__keys { font-size: 12px; margin: 4px 0 0; }
 @media (max-width: 760px) {
   body:has(.reader) { padding-bottom: 0; }
-  .reader__tools { top: auto; bottom: calc(70px + var(--safe-bottom)); transform: none; right: 10px; }
+  /* Just under the chapter pill (top right), clear of the art lower down. */
+  .reader__tools { top: calc(60px + var(--safe-top)); bottom: auto; transform: none; right: 10px; }
   .reader.is-hidden .reader__tools { transform: translateX(140%); }
   .reader__panel { right: 10px; left: 10px; width: auto; top: auto; bottom: calc(70px + var(--safe-bottom)); transform: none; max-height: 60vh; }
   .reader__page { height: calc(100dvh - 120px); }
@@ -1627,6 +1637,11 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .fit-w:not(.fit-h) .reader__page img:not(.reader__preload) { max-height: none; width: 100%; }
 .reader--double.fit-w:not(.fit-h) .reader__page img:not(.reader__preload) { width: calc(50% - var(--page-gap, 0px) / 2); }
 .gray .reader__strip img, .gray .reader__page img { filter: grayscale(1); }
+/* Single / double page: a webtoon-style page (marked .is-tall when it loads) fills the width
+   and scrolls down, instead of being squeezed to the screen height. */
+.reader__page:has(img.is-tall) { height: auto; align-items: flex-start; }
+.reader .reader__page img.is-tall { max-height: none; height: auto; width: min(100%, 760px); }
+.reader--double .reader__page img.is-tall { width: min(calc(50% - var(--page-gap, 0px) / 2), 760px); }
 .reader__dim { position: fixed; inset: 0; z-index: 35; background: #000; pointer-events: none; }
 
 /* Reader: page progress bar */
@@ -1682,6 +1697,15 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
   .reader__pill { top: calc(10px + var(--safe-top)); bottom: auto; }
   .reader.is-hidden .reader__pill { transform: translate(-50%, -160%); }
 }
+/* Phones: top right, in line with the back button and title (which stop short of it). */
+@media (max-width: 760px) {
+  .reader__pill { top: calc(10px + var(--safe-top)); bottom: auto; left: auto; right: 10px; transform: none; padding: 2px; }
+  .reader__pill button { height: 32px; min-width: 30px; }
+  .reader__pill .reader__pillmid { padding: 0 6px; font-size: 12px; }
+  .reader.is-hidden .reader__pill { transform: translateY(-160%); }
+  .reader__top { padding-right: 176px; }
+  .reader:has(.reader__progress--right) .reader__pill { right: calc(var(--bar) + 6px); }
+}
 
 /* Reader: panels (chapters, settings, help) */
 .rpanel {
@@ -1732,6 +1756,20 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .rcheck.is-disabled { opacity: 0.4; cursor: default; }
 .rrange { width: 100%; accent-color: var(--accent-2); }
 .rzoom { display: flex; align-items: center; gap: 8px; }
+/* Settings → Sources: every source, with whether it has this chapter. */
+.rsources { display: flex; flex-direction: column; gap: 6px; }
+.rsource {
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: 10px; row-gap: 2px;
+  padding: 11px 12px; border-radius: 10px; border: 1px solid transparent; background: var(--bg-3); color: var(--text); text-align: left; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.rsource:hover:not(:disabled) { border-color: var(--accent-2); }
+.rsource:disabled { cursor: default; }
+.rsource:disabled:not(.is-active) { opacity: 0.45; }
+.rsource.is-active { border-color: color-mix(in srgb, var(--accent-2) 60%, transparent); background: color-mix(in srgb, var(--accent-2) 14%, var(--bg-3)); }
+.rsource__name { font-weight: 700; font-size: 14px; }
+.rsource__meta { grid-column: 1; font-size: 12px; color: var(--muted); }
+.rsource > svg { grid-column: 2; grid-row: 1 / span 2; color: #c9b8ff; }
 .rzoom .rrange { flex: 1; }
 .rzoom button { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; border: 0; border-radius: 8px; background: var(--bg-3); color: var(--text); cursor: pointer; }
 .rzoom button:disabled { opacity: 0.4; cursor: default; }

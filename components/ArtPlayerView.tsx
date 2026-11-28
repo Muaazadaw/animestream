@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 import { setUpscaleMode, startAnime4K, UPSCALE_MODES, type UpscaleMode } from "@/lib/anime4k";
 import { hlsBuffers, perfTier } from "@/lib/device";
 import type { Stream } from "@/lib/sources/types";
+import { keepAudioLanguage } from "@/lib/audio-track";
+import { useSeekPreview } from "./useSeekPreview";
 
 // The same player features as Player.tsx (Plyr), built on ArtPlayer
 // (https://artplayer.org): HLS with server fallback, quality, subtitles,
@@ -57,6 +59,9 @@ export default function ArtPlayerView({
   const lastSaved = useRef(0);
   const cb = useRef({ onProgress, onNext, autoSkip, autoplayNext, hasNext, stream, upscale });
   cb.current = { onProgress, onNext, autoSkip, autoplayNext, hasNext, stream, upscale };
+
+  // Frame previews when hovering the seek bar.
+  useSeekPreview(hostRef, stream.sources[0], ".art-control-progress", stream.audioLang);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -159,6 +164,7 @@ export default function ArtPlayerView({
             }
             hls?.destroy();
             hls = new Hls({ enableWorker: true, capLevelToPlayerSize: true, startLevel: 0, ...hlsBuffers() });
+            keepAudioLanguage(hls, cb.current.stream.audioLang);
             let retries = 0;
             let recoveries = 0;
             let srcIndex = 0;
@@ -293,11 +299,19 @@ export default function ArtPlayerView({
     return () => clearTimeout(timer);
   }, [nextIn]);
 
-  // S skips intro/outro, N plays the next episode (ArtPlayer handles the rest).
+  // S skips intro/outro, N plays the next episode, Shift+Enter jumps 1:30 ahead (an
+  // opening's length). ArtPlayer handles the rest.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Enter" && e.shiftKey) {
+        const video = artRef.current?.video;
+        if (!video) return;
+        e.preventDefault();
+        video.currentTime = Math.min(video.currentTime + 90, (video.duration || Infinity) - 0.5);
+        return;
+      }
       const k = e.key.toLowerCase();
       if (k === "s" && skip) doSkip(skip);
       if (k === "n" && cb.current.hasNext) cb.current.onNext();
