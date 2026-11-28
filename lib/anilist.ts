@@ -215,6 +215,57 @@ export async function searchMangaTitle(title: string): Promise<{ id: number; nam
   }));
 }
 
+export type RecommendedFrom = {
+  id: number;
+  recommendations: { nodes: { rating: number; mediaRecommendation: (QuickHitRaw & { averageScore: number | null; isAdult: boolean }) | null }[] };
+};
+type QuickHitRaw = { id: number; type: MediaType; title: MediaTitle; format: string | null; startDate: { year: number | null }; coverImage: { medium: string | null } };
+
+/** AniList users' recommendations for each of these titles, best rated first. */
+export async function getRecommendations(ids: number[]): Promise<RecommendedFrom[]> {
+  const data = await query<{ Page: { media: RecommendedFrom[] } }>(
+    `query ($ids: [Int]) { Page(perPage: 25) { media(id_in: $ids) { id
+      recommendations(sort: RATING_DESC, perPage: 15) { nodes { rating mediaRecommendation {
+        id type format isAdult averageScore title { romaji english native userPreferred } startDate { year } coverImage { medium } } } } } } }`,
+    { ids: [...ids].sort((a, b) => a - b) },
+    86400,
+  );
+  return data.Page.media;
+}
+
+/** Well-liked titles to fall back on when there's nothing to go on yet. */
+export async function getPopularPicks(type: MediaType): Promise<QuickHit[]> {
+  const data = await query<{ Page: { media: QuickHitRaw[] } }>(
+    `query ($type: MediaType) { Page(perPage: 40) { media(type: $type, isAdult: false, sort: TRENDING_DESC, averageScore_greater: 75) {
+      id type format title { romaji english native userPreferred } startDate { year } coverImage { medium } } } }`,
+    { type },
+    3600,
+  );
+  return data.Page.media.map(toQuickHit);
+}
+
+export const toQuickHit = (m: QuickHitRaw): QuickHit => ({
+  id: m.id,
+  type: m.type,
+  title: titleOf(m.title),
+  format: m.format,
+  year: m.startDate.year,
+  cover: m.coverImage.medium,
+});
+
+export type QuickHit ={ id: number; type: MediaType; title: string; format: string | null; year: number | null; cover: string | null };
+
+/** Best matches for the search box as you type: anime and manga together. */
+export async function quickSearch(search: string): Promise<QuickHit[]> {
+  const data = await query<{ Page: { media: QuickHitRaw[] } }>(
+    `query ($s: String) { Page(perPage: 8) { media(search: $s, isAdult: false, sort: SEARCH_MATCH) {
+      id type format title { romaji english native userPreferred } startDate { year } coverImage { medium } } } }`,
+    { s: search },
+    86400,
+  );
+  return data.Page.media.map(toQuickHit);
+}
+
 /** Rows for the manga home page. */
 export async function getMangaHome() {
   type Page = { media: (MediaCard & { description?: string | null })[] };

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { applyAppearance } from "@/lib/appearance";
-import { APPEARANCE_EVENT, getPrefs } from "@/lib/storage";
+import { getPrefs, onPrefsChange } from "@/lib/storage";
 
 /** Card links that "Open anime on: Watch" sends to the watch page instead of the info page. */
 const CARD = ".pcard, .card, .lcard, .tcard, .slist__item, .season, .notif__item";
@@ -15,8 +15,7 @@ export default function AppearanceClient() {
   useEffect(() => {
     const apply = () => applyAppearance(getPrefs());
     apply();
-    window.addEventListener(APPEARANCE_EVENT, apply);
-    return () => window.removeEventListener(APPEARANCE_EVENT, apply);
+    return onPrefsChange(apply);
   }, []);
 
   useEffect(() => {

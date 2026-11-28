@@ -31,7 +31,14 @@ type AniZip = {
     }
   >;
   images?: { coverType?: string; url?: string }[];
-  mappings?: { mal_id?: number | null; kitsu_id?: number | null; anidb_id?: number | null; animeplanet_id?: string | number | null };
+  mappings?: {
+    mal_id?: number | null;
+    kitsu_id?: number | null;
+    anidb_id?: number | null;
+    animeplanet_id?: string | number | null;
+    themoviedb_id?: string | number | null;
+    type?: string | null;
+  };
 };
 
 /** The same show or manga's id on other database sites, where known. */
@@ -69,16 +76,37 @@ export async function getMangaSiteIds(idMal?: number | null): Promise<SiteIds> {
   return { mal: idMal, kitsu };
 }
 
+/** The show's English title logo from TMDB (needs TMDB_API_KEY: a v3 key or a v4 read token), or null. */
+async function englishLogo(tmdbId: string, movie: boolean): Promise<string | null> {
+  const key = process.env.TMDB_API_KEY;
+  if (!key) return null;
+  const v4 = key.length > 40;
+  const url = `https://api.themoviedb.org/3/${movie ? "movie" : "tv"}/${tmdbId}/images?include_image_language=en${v4 ? "" : `&api_key=${key}`}`;
+  const res = await fetch(url, {
+    headers: v4 ? { Authorization: `Bearer ${key}`, Accept: "application/json" } : { Accept: "application/json" },
+    next: { revalidate: 86400 },
+  }).catch(() => null);
+  const data = res?.ok ? ((await res.json().catch(() => null)) as { logos?: { file_path: string; iso_639_1: string | null }[] } | null) : null;
+  // TMDB lists the best-voted logo first.
+  const logo = data?.logos?.find((l) => l.iso_639_1 === "en" && /\.(png|svg)$/i.test(l.file_path));
+  return logo ? `https://image.tmdb.org/t/p/w500${logo.file_path.replace(/\.svg$/i, ".png")}` : null;
+}
+
 /**
- * Hero art from TVDB: the series' top-rated 1080p background (sharper and better framed than
- * AniList's banner strip) and its transparent title logo. Either may be null.
+ * Hero art: TVDB's top-rated 1080p background (sharper and better framed than AniList's banner
+ * strip) and a transparent title logo in English. TVDB's logo doesn't say its language and is often
+ * Japanese, so it's only used for shows with no English title (the others show their title as
+ * text when TMDB has no English logo). Either may be null.
  */
-export async function getHeroArt(id: number): Promise<{ backdrop: string | null; logo: string | null }> {
+export async function getHeroArt(id: number, hasEnglishTitle: boolean): Promise<{ backdrop: string | null; logo: string | null }> {
   const z = await aniZip(id);
   const find = (type: string) => z?.images?.find((i) => i.coverType?.toLowerCase() === type)?.url ?? null;
-  const logo = find("clearlogo");
+  const tmdb = z?.mappings?.themoviedb_id;
+  const english = tmdb ? await englishLogo(String(tmdb), z?.mappings?.type === "MOVIE") : null;
+  const tvdb = find("clearlogo");
   // Some "clearlogos" are old JPEG icons with a solid background; only PNGs are see-through.
-  return { backdrop: find("fanart"), logo: logo && /\.png$/i.test(logo) ? logo : null };
+  const fallback = !hasEnglishTitle && tvdb && /\.png$/i.test(tvdb) ? tvdb : null;
+  return { backdrop: find("fanart"), logo: english ?? fallback };
 }
 
 /**

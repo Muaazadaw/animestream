@@ -362,6 +362,10 @@ export type Prefs = {
   /** Server picked per show (anime id → provider id); takes priority. */
   sourceFor: Record<string, string>;
   episodeLayout: "auto" | "list" | "grid";
+  /** Manga source whose chapters come first; "" = automatic (the default order). */
+  mangaSource: string;
+  /** Open a chapter from the fastest other source when one fails or loads slowly. */
+  mangaAutoSwitch: boolean;
   /** Stop recording history and positions in this browser. */
   pauseHistory: boolean;
   /** Show Continue Watching on the home page. */
@@ -390,6 +394,8 @@ const DEFAULT_PREFS: Prefs = {
   preferredSource: "",
   sourceFor: {},
   episodeLayout: "auto",
+  mangaSource: "",
+  mangaAutoSwitch: true,
   pauseHistory: false,
   homeHistory: true,
   autoSyncList: true,
@@ -411,6 +417,17 @@ export function getPrefs(): Prefs {
 export function resetPrefs() {
   write(PREFS_KEY, DEFAULT_PREFS, false);
   window.dispatchEvent(new Event(APPEARANCE_EVENT));
+}
+
+/** Calls `fn` whenever preferences change, here or in another tab. Returns the unsubscribe. */
+export function onPrefsChange(fn: () => void): () => void {
+  const other = (e: StorageEvent) => (e.key === PREFS_KEY || e.key === null) && fn();
+  window.addEventListener(APPEARANCE_EVENT, fn);
+  window.addEventListener("storage", other);
+  return () => {
+    window.removeEventListener(APPEARANCE_EVENT, fn);
+    window.removeEventListener("storage", other);
+  };
 }
 
 export function setPrefs(p: Partial<Prefs>) {

@@ -50,6 +50,13 @@ const STATUS_LABEL: Record<ListStatus, string> = {
   PAUSED: "Paused",
   DROPPED: "Dropped",
 };
+// The Manga tab talks about reading instead.
+const MANGA_STATUS_LABEL: Record<ListStatus, string> = {
+  ...STATUS_LABEL,
+  CURRENT: "Reading",
+  PLANNING: "Plan to read",
+  REPEATING: "Re-Reading",
+};
 const SIDEBAR_ORDER: ListStatus[] = ["CURRENT", "PLANNING", "COMPLETED", "REPEATING", "PAUSED", "DROPPED"];
 const TYPES = ["TV", "MOVIE", "OVA", "ONA", "SPECIAL", "TV_SHORT"];
 const AIRING = [
@@ -165,8 +172,11 @@ export default function LibraryPage() {
   }, [entries, view, customView, q, type, kind, airing, info]);
 
   const name = display ?? profile.anilist?.name ?? user ?? "…";
+  const reading = kind === "MANGA";
+  const labels = reading ? MANGA_STATUS_LABEL : STATUS_LABEL;
+  const historyLabel = reading ? "Continue reading" : "Continue watching";
   const viewLabel =
-    view === "ALL" ? "Watchlist" : view === "FAVORITES" ? "Favorites" : view === "HISTORY" ? "Continue watching" : customView ? customView.name : STATUS_LABEL[view as ListStatus];
+    view === "ALL" ? (reading ? "Reading list" : "Watchlist") : view === "FAVORITES" ? "Favorites" : view === "HISTORY" ? historyLabel : customView ? customView.name : labels[view as ListStatus];
 
   return (
     <div className="container page profile">
@@ -246,13 +256,13 @@ export default function LibraryPage() {
             {SIDEBAR_ORDER.map((s) => (
               <button key={s} className={view === s ? "is-active" : ""} onClick={() => setView(s)}>
                 <Icon name={STATUS_ICON[s]} size={15} />
-                <span>{STATUS_LABEL[s]}</span>
+                <span>{labels[s]}</span>
                 <em>{counts[s] ?? 0}</em>
               </button>
             ))}
             <button className={view === "HISTORY" ? "is-active" : ""} onClick={() => setView("HISTORY")}>
               <Icon name="rewatch" size={15} />
-              <span>Continue watching</span>
+              <span>{historyLabel}</span>
               <em>{history.length}</em>
             </button>
           </nav>

@@ -3,39 +3,77 @@
 // Browser side of manga: the chapter list for a manga (shared by the detail
 // page and the reader, fetched once per visit) and the reader's settings.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePrefs } from "../use-prefs";
 import type { Chapter } from "./mangadex";
+import { MANGA_SOURCES, mergeChapters, type MangaSourceId, type SourceChapters } from "./sources";
 
 export type { Chapter };
 
-const cache = new Map<number, Promise<Chapter[]>>();
+const cache = new Map<number, Promise<SourceChapters>>();
 
-export function fetchChapters(anilistId: number): Promise<Chapter[]> {
+export function fetchChapters(anilistId: number): Promise<SourceChapters> {
   let p = cache.get(anilistId);
   if (!p) {
     p = fetch(`/api/manga/chapters?id=${anilistId}`)
-      .then((r) => (r.ok ? r.json() : { chapters: [] }))
-      .then((d: { chapters?: Chapter[] }) => d.chapters ?? []);
+      .then((r) => (r.ok ? r.json() : { sources: {} }))
+      .then((d: { sources?: SourceChapters }) => d.sources ?? {});
     p.catch(() => cache.delete(anilistId));
     cache.set(anilistId, p);
   }
   return p;
 }
 
-/** Chapters Mayoi can show for a manga, oldest first. `null` while loading. */
+/**
+ * Chapters Mayoi can show for a manga, oldest first (all sources merged, the preferred one
+ * first), and each source's own list. `null` while loading.
+ */
 export function useChapters(anilistId: number) {
-  const [chapters, setChapters] = useState<Chapter[] | null>(null);
+  const [sources, setSources] = useState<SourceChapters | null>(null);
   const [error, setError] = useState(false);
+  const preferred = usePrefs()?.mangaSource ?? "";
   useEffect(() => {
     let live = true;
     fetchChapters(anilistId)
-      .then((c) => live && setChapters(c))
-      .catch(() => live && (setError(true), setChapters([])));
+      .then((s) => live && setSources(s))
+      .catch(() => live && (setError(true), setSources({})));
     return () => {
       live = false;
     };
   }, [anilistId]);
-  return { chapters, error };
+  const chapters = useMemo(() => (sources ? mergeChapters(sources, preferred) : null), [sources, preferred]);
+  return { chapters, sources, error };
+}
+
+// How long each source took to show a chapter's first page, in ms (a running average).
+const SPEED_KEY = "as:manga-speed";
+
+function speeds(): Partial<Record<MangaSourceId, number>> {
+  try {
+    return JSON.parse(localStorage.getItem(SPEED_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+export function recordSourceSpeed(source: MangaSourceId, ms: number) {
+  const all = speeds();
+  all[source] = all[source] ? Math.round(all[source]! * 0.7 + ms * 0.3) : Math.round(ms);
+  try {
+    localStorage.setItem(SPEED_KEY, JSON.stringify(all));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** Other sources' uploads of a chapter number, fastest first (sources not timed yet go in the default order, after timed ones). */
+export function alternatives(sources: SourceChapters, number: string, skip: Set<string>): Chapter[] {
+  const known = speeds();
+  const n = parseFloat(number);
+  return MANGA_SOURCES.map((s) => ({ s: s.id, c: sources[s.id]?.find((c) => parseFloat(c.number) === n) }))
+    .filter((x): x is { s: MangaSourceId; c: Chapter } => !!x.c && !skip.has(x.c.id))
+    .sort((a, b) => (known[a.s] ?? 1e9) - (known[b.s] ?? 1e9))
+    .map((x) => x.c);
 }
 
 export type ReaderPrefs = {
@@ -60,6 +98,8 @@ export type ReaderPrefs = {
   grayscale: boolean;
   /** Darken the pages, 0–80 (%). */
   dim: number;
+  /** Page size, 50–300 (%); over 100 the pages can be scrolled sideways. */
+  zoom: number;
   /** Smaller, compressed images where the source has them. */
   saver: boolean;
 };
@@ -78,6 +118,7 @@ export const DEFAULT_READER_PREFS: ReaderPrefs = {
   limitHeight: false,
   grayscale: false,
   dim: 0,
+  zoom: 100,
   saver: false,
 };
 

@@ -18,6 +18,7 @@ import {
   getPosition,
   getPrefs,
   isWatched,
+  onPrefsChange,
   saveProgress,
   setPrefs,
   STORAGE_EVENT,
@@ -169,6 +170,17 @@ export default function WatchClient({ anime, related, recommendations, providers
     setPrefsState((s) => ({ ...s, ...p }));
     setPrefs(p);
   }
+
+  // Changes made in Settings (or another tab) apply straight away.
+  useEffect(
+    () =>
+      onPrefsChange(() => {
+        const p = getPrefs();
+        setPrefsState({ autoplay: p.autoplay, autoStart: p.autoStart, autoSkip: p.autoSkip, hideSpoilers: p.hideSpoilers });
+        if (p.episodeLayout !== "auto") setView(p.episodeLayout);
+      }),
+    [],
+  );
 
   function pickSource(id: string) {
     setSourceId(id);

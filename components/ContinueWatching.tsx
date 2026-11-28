@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getHistory, getPrefs, removeHistory, STORAGE_EVENT, type HistoryEntry } from "@/lib/storage";
+import { getHistory, removeHistory, STORAGE_EVENT, type HistoryEntry } from "@/lib/storage";
+import { usePrefs } from "@/lib/use-prefs";
 import Row from "./Row";
 
 export function useHistory() {
@@ -61,8 +62,7 @@ export function HistoryCard({ h }: { h: HistoryEntry }) {
 
 export default function ContinueWatching() {
   const items = useHistory();
-  const [show, setShow] = useState(true);
-  useEffect(() => setShow(getPrefs().homeHistory), []);
+  const show = usePrefs()?.homeHistory ?? true;
   if (items.length === 0 || !show) return null;
   return (
     <Row title="Continue Watching" href="/library">

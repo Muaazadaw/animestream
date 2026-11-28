@@ -4,20 +4,31 @@ import Row from "@/components/Row";
 import AnimeCard from "@/components/AnimeCard";
 import { getMangaHome, getMediaByIds } from "@/lib/anilist";
 import { getLatestChapters, type LatestChapter } from "@/lib/manga/mangadex";
-import { getLatestChapters as getMangaKatanaLatest } from "@/lib/manga/mangakatana";
+import { getLatestItems as getAsuraLatest } from "@/lib/manga/asura";
+import { matchLatest, type LatestItem as ScrapedItem } from "@/lib/manga/latest";
+import { getLatestItems as getMangaKatanaLatest } from "@/lib/manga/mangakatana";
+import { getLatestItems as getMangaPillLatest } from "@/lib/manga/mangapill";
+
+// A scraped source that fails or is blocked just adds nothing.
+const scraped = (name: string, p: Promise<ScrapedItem[]>) =>
+  p.catch((e) => (console.error(`[manga] ${name} latest`, e), [] as ScrapedItem[]));
 
 export const metadata: Metadata = { title: "Manga" };
 export const revalidate = 300;
 
 export default async function MangaHomePage() {
-  const [home, mangadex, mangakatana] = await Promise.all([
+  const [home, mangadex, scrapedItems] = await Promise.all([
     getMangaHome(),
-    getLatestChapters(63).catch(() => []),
-    getMangaKatanaLatest().catch((e) => (console.error("[manga] mangakatana latest", e), [] as LatestChapter[])),
+    getLatestChapters(63).catch(() => [] as LatestChapter[]),
+    Promise.all([
+      scraped("asura", getAsuraLatest()),
+      scraped("mangakatana", getMangaKatanaLatest()),
+      scraped("mangapill", getMangaPillLatest()),
+    ]).then((lists) => matchLatest(lists.flat())),
   ]);
-  // Newest first, one entry per manga across both sources.
+  // Newest first, one entry per manga across every source.
   const seen = new Set<number>();
-  const latest = [...mangadex, ...mangakatana]
+  const latest = [...mangadex, ...scrapedItems]
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
     .filter((l) => !seen.has(l.anilistId) && !!seen.add(l.anilistId));
   const cards = await getMediaByIds(latest.map((l) => l.anilistId)).catch(() => []);

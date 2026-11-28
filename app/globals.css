@@ -74,7 +74,20 @@ body { padding-left: var(--rail); }
 .logo__word { font-weight: 900; font-size: 21px; letter-spacing: -0.6px; color: #f1eef8; }
 .logo-mark { display: block; flex-shrink: 0; }
 .topbar__logo { justify-self: start; }
-.search { display: flex; background: rgba(28, 28, 39, 0.85); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.search { position: relative; display: flex; background: rgba(28, 28, 39, 0.85); border: 1px solid var(--line); border-radius: 10px; }
+/* Results as you type, under the box while it has focus. */
+.ssug { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; max-height: min(70vh, 480px); overflow-y: auto; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: rgb(20, 20, 28); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+.search:not(:focus-within) .ssug { display: none; }
+.search .search__pick { border-left: 0; padding: 0 10px; }
+.search .search__pick:hover { color: var(--text); }
+.search__pick.is-busy svg { animation: spin 0.8s linear infinite; }
+.ssug__item { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; }
+.ssug__item:hover, .ssug__item:focus-visible { background: var(--bg-3); color: var(--text); outline: 0; }
+.ssug__item img, .ssug__cover { width: 36px; height: 50px; flex-shrink: 0; border-radius: 5px; object-fit: cover; background: var(--bg-3); }
+.ssug__text { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.ssug__text strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssug__text span { font-size: 12px; color: var(--muted); }
+.ssug__empty { margin: 0; padding: 10px; font-size: 13px; color: var(--muted); }
 .search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; padding: 9px 14px; font-size: 14px; }
 .search button { background: none; border: 0; border-left: 1px solid var(--line); padding: 0 14px; cursor: pointer; color: var(--muted); display: grid; place-items: center; }
 .search:focus-within { border-color: var(--accent-2); }
@@ -1341,6 +1354,7 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
     background: rgb(20, 20, 28);
   }
   .topbar .search.is-open input { display: block; }
+  .topbar .search:not(.is-open) .ssug, .topbar .search:not(.is-open) .search__pick { display: none; }
   .topbar .search.is-open button { width: 44px; }
   .manga-detail .hero__actions > .btn--primary { flex: 1 1 100%; }
   .manga-detail .hero__actions .mstatus { flex: 1; }
@@ -1427,7 +1441,21 @@ html[data-cards="large"] .lgrid { grid-template-columns: repeat(auto-fill, minma
 .reader__name { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .reader__name strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reader__name span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reader__source { margin-left: 8px; padding: 1px 6px; border-radius: 5px; background: rgba(255, 255, 255, 0.08); font-style: normal; font-size: 11px; font-weight: 700; }
+.reader__note { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px); padding: 8px 12px; border: 0; border-radius: 10px; background: var(--bg-3); color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); }
 .reader__pages { display: flex; flex-direction: column; align-items: center; padding: 64px 0 120px; }
+/* Pages can't be selected (the blue highlight on double-tap or drag) or dragged away. */
+.reader__pages, .reader__pages img { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.reader__pages img { -webkit-user-drag: none; }
+/* Zoom (Image settings): pages grow from their usual size; wider than the screen scrolls sideways. */
+/* .reader.zoomed outranks the fit / stretch rules further down. */
+.reader.zoomed .reader__pages { overflow-x: auto; align-items: safe center; }
+.reader.zoomed .reader__strip { align-items: safe center; }
+.reader.zoomed .reader__strip img { width: calc(min(100vw, 760px) * var(--zoom)); max-width: none; }
+.reader.zoomed.fit-w .reader__strip img { width: calc(100vw * var(--zoom)); }
+.reader.zoomed.fit-w.limit-w .reader__strip img { width: calc(min(100vw, 1000px) * var(--zoom)); }
+.reader.zoomed .reader__page { overflow: auto; justify-content: safe center; }
+.reader.zoomed .reader__page img:not(.reader__preload) { max-width: none; max-height: none; height: calc((100dvh - 140px) * var(--zoom)); width: auto; }
 .reader__pages > img { width: 100%; max-width: 760px; height: auto; min-height: 300px; background: #0d0d12; }
 .reader--width .reader__pages > img { max-width: 1200px; }
 .reader--gap .reader__pages > img { margin-bottom: 10px; }
@@ -1586,18 +1614,48 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .reader__dim { position: fixed; inset: 0; z-index: 35; background: #000; pointer-events: none; }
 
 /* Reader: page progress bar */
-.reader__progress { position: fixed; z-index: 38; display: flex; gap: 2px; padding: 4px; opacity: 0.55; transition: opacity 0.2s; }
-.reader__progress:hover { opacity: 1; }
-.reader__progress button { flex: 1; min-width: 2px; min-height: 2px; border: 0; padding: 0; border-radius: 2px; background: rgba(255, 255, 255, 0.16); cursor: pointer; }
-.reader__progress button:hover { background: rgba(255, 255, 255, 0.45); }
-.reader__progress button.is-done { background: var(--accent); }
-.reader__progress--left, .reader__progress--right { top: 18%; bottom: 18%; width: 12px; flex-direction: column; }
-.reader__progress--left { left: 4px; }
-.reader__progress--right { right: 4px; }
-.reader__progress--top, .reader__progress--bottom { left: 22%; right: 22%; height: 10px; }
+/* Page progress / scrubber: a full-length column (or row) of blocks along the edge, one
+   per page. Read pages are tinted, the page on screen is lit. Tap a block
+   to jump, or slide along the bar with a "Page n" bubble following. */
+.reader { --bar: 28px; }
+.reader__progress {
+  position: fixed; z-index: 38; display: flex; gap: 1px; background: #0b0b10;
+  touch-action: none; cursor: pointer; user-select: none; -webkit-user-select: none;
+  transition: opacity 0.25s ease;
+}
+/* After a jump: fade out slowly (still there to tap or point at). */
+.reader__progress.is-faded { opacity: 0; transition: opacity 1.4s ease 0.4s; }
+.reader__progress button {
+  flex: 1; min-width: 2px; min-height: 2px; border: 0; padding: 0; overflow: hidden;
+  display: grid; place-items: center; font: 800 10px/1 inherit; color: #fff;
+  background: #2b2d35; cursor: pointer; transition: background 0.1s;
+}
+.reader__progress button:hover { background: #3c3f4a; }
+.reader__progress button.is-done { background: color-mix(in srgb, var(--accent) 45%, #14141a); }
+.reader__progress button.is-current { background: var(--accent); }
+.reader__progress button.is-target { background: #fff; color: #111; }
+.reader__progress--left, .reader__progress--right { top: 0; bottom: 0; width: var(--bar); flex-direction: column; }
+.reader__progress--left { left: 0; }
+.reader__progress--right { right: 0; }
+.reader__progress--top, .reader__progress--bottom { left: 0; right: 0; height: var(--bar); }
 .reader__progress--top { top: 0; }
-.reader__progress--bottom { bottom: var(--safe-bottom); }
-.reader:has(.reader__progress--right) .reader__tools { right: 24px; }
+.reader__progress--bottom { bottom: 0; padding-bottom: var(--safe-bottom); }
+/* Keep the pages and controls clear of the bar. */
+.reader:has(.reader__progress--left) .reader__pages { padding-left: var(--bar); }
+.reader:has(.reader__progress--right) .reader__pages { padding-right: var(--bar); }
+.reader:has(.reader__progress--top) .reader__top { top: var(--bar); }
+.reader:has(.reader__progress--left) .reader__top { left: var(--bar); }
+.reader:has(.reader__progress--right) .reader__top { right: var(--bar); }
+.reader__scrub {
+  position: absolute; padding: 6px 10px; border-radius: 8px; background: var(--bg-2, #16161d); color: var(--text);
+  font-size: 13px; font-weight: 700; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.reader__scrub em { margin-left: 4px; font-style: normal; font-weight: 500; color: var(--muted, #9a9aa8); }
+.reader__progress--left .reader__scrub { left: calc(100% + 8px); top: var(--at); transform: translateY(-50%); }
+.reader__progress--right .reader__scrub { right: calc(100% + 8px); top: var(--at); transform: translateY(-50%); }
+.reader__progress--top .reader__scrub { top: calc(100% + 8px); left: var(--at); transform: translateX(-50%); }
+.reader__progress--bottom .reader__scrub { bottom: calc(100% + 8px); left: var(--at); transform: translateX(-50%); }
+.reader:has(.reader__progress--right) .reader__tools { right: calc(var(--bar) + 8px); }
 
 /* Reader: chapter pill sits at the top on bigger screens */
 @media (min-width: 761px) {
@@ -1653,6 +1711,12 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .rcheck input { width: 16px; height: 16px; accent-color: var(--accent-2); }
 .rcheck.is-disabled { opacity: 0.4; cursor: default; }
 .rrange { width: 100%; accent-color: var(--accent-2); }
+.rzoom { display: flex; align-items: center; gap: 8px; }
+.rzoom .rrange { flex: 1; }
+.rzoom button { display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; border: 0; border-radius: 8px; background: var(--bg-3); color: var(--text); cursor: pointer; }
+.rzoom button:disabled { opacity: 0.4; cursor: default; }
+.rpanel__reset { margin-right: 8px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.rpanel__reset:hover { color: var(--text); }
 .rpanel__search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; background: var(--bg-3); color: var(--muted); }
 .rpanel__search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); font-size: 14px; }
 .rpanel__seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 10px; background: var(--bg-3); }
@@ -1678,7 +1742,7 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 @media (max-width: 760px) {
   .rpanel { left: 10px; right: 10px; width: auto; top: auto; bottom: calc(70px + var(--safe-bottom)); transform: none; max-height: 72vh; animation-name: rpanel-up; }
   @keyframes rpanel-up { from { opacity: 0; transform: translateY(8px); } }
-  .reader__progress--left, .reader__progress--right { width: 8px; }
+  .reader { --bar: 24px; }
 }
 @media (prefers-reduced-motion: reduce) { .rpanel { animation: none; } }
 
@@ -1841,6 +1905,9 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .clist__pill, .clist__sort { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 9px; background: var(--bg-3); font-size: 13px; font-weight: 700; }
 .clist__pill em, .clist__sort em { font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .clist__sort { padding: 0 3px 0 10px; }
+.clist__source { padding-right: 4px; cursor: pointer; }
+.clist__source select { height: 30px; padding: 0 4px; border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; outline: 0; }
+.clist__source select option { background: var(--bg-2); color: var(--text); }
 .clist__sort button { height: 30px; padding: 0 12px; border-radius: 7px; border: 0; background: none; color: var(--muted); font-weight: 700; font-size: 13px; cursor: pointer; }
 .clist__sort button.is-active { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
 .clist__rows { display: flex; flex-direction: column; }
@@ -1852,6 +1919,8 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .crow__num { font-weight: 800; white-space: nowrap; }
 .crow__title { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crow__when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.crow__src { flex-shrink: 0; padding: 2px 7px; border-radius: 6px; background: var(--bg-3); font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+@media (max-width: 560px) { .crow__src { display: none; } }
 .crow__mark { display: grid; place-items: center; width: 22px; color: rgba(255, 255, 255, 0.25); }
 .crow.is-read .crow__num { color: var(--muted); }
 .crow.is-read .crow__mark { color: color-mix(in srgb, var(--accent-2) 55%, transparent); }
@@ -1957,4 +2026,4 @@ html[data-perf="low"] *, html[data-perf="low"] *::before, html[data-perf="low"] 
 html[data-perf="low"] .card:hover .card__img img, html[data-perf="low"] .pcard:hover .pcard__img img { transform: none; }
 html[data-perf="low"] .hero__bg { transition: none; }
 html[data-perf="low"] .hero__fill { display: none; }
-html[data-perf="low"] .manga-detail .detail__banner[data-blur] { filter: brightness(0.5); transform: none; }
+html[data-perf="mid"] .manga-detail .detail__banner[data-blur], html[data-perf="low"] .manga-detail .detail__banner[data-blur] { filter: brightness(0.5); transform: none; }

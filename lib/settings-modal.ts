@@ -10,6 +10,7 @@ export type SettingsSection =
   | "appearance"
   | "language"
   | "watching"
+  | "reading"
   | "history"
   | "keys-general"
   | "keys-watching"

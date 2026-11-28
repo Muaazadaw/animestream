@@ -137,6 +137,7 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  shuffle: <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />,
   inbox: (
     <>
       <path d="M3 13h5l1.5 3h5L16 13h5" />

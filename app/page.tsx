@@ -13,7 +13,7 @@ export default async function HomePage() {
   const home = await getHome();
 
   const candidates = home.trending.slice(0, 20);
-  const art = await Promise.all(candidates.map((m) => getHeroArt(m.id).catch(() => ({ backdrop: null, logo: null }))));
+  const art = await Promise.all(candidates.map((m) => getHeroArt(m.id, !!m.title.english).catch(() => ({ backdrop: null, logo: null }))));
   // For each show, measure both AniList's banner and TVDB's backdrop and keep whichever needs the
   // least upscaling to cover a typical 1920×690 hero. Sharp slides come first, in trending order.
   const scored = await Promise.all(

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useChapters, type Chapter } from "@/lib/manga/client";
+import { MANGA_SOURCES, sourceName, sourceOf } from "@/lib/manga/sources";
 import { getLists, isFavorite, setListStatus, STORAGE_EVENT, toggleFavorite, type ListEntry, type SavedAnime } from "@/lib/storage";
 import type { ListStatus } from "@/lib/state";
 import { openListEditor } from "@/lib/list-editor";
@@ -176,7 +177,13 @@ function pageWindow(current: number, pages: number): (number | "gap")[] {
 
 /** All readable chapters as one list: search, sort, pages of 20, and a bookmark on where you're up to. */
 export function ChapterList({ mangaId }: { mangaId: number }) {
-  const { chapters, error } = useChapters(mangaId);
+  const { chapters: merged, sources, error } = useChapters(mangaId);
+  // "" = every source merged; otherwise one source's own list. Only sources with chapters are offered.
+  const [pick, setPick] = useState("");
+  const available = MANGA_SOURCES.filter((s) => sources?.[s.id]?.length);
+  const picked = available.find((s) => s.id === pick);
+  const chapters = picked ? sources![picked.id]! : merged;
+  const tagged = !picked && available.length > 1;
   const { entry } = useEntry(mangaId);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"desc" | "asc" | "date">("desc");
@@ -206,7 +213,7 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
     const i = next ? shown.indexOf(next) : 0;
     setPage(i > 0 ? Math.floor(i / PER_PAGE) : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sort, term, chapters?.length, progress > 0]);
+  }, [sort, term, chapters, progress > 0]);
 
   const goPage = (p: number) => {
     setPage(p);
@@ -242,6 +249,23 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
           <span className="clist__pill">
             <em>Lang</em> English
           </span>
+          {available.length > 1 ? (
+            <label className="clist__pill clist__source">
+              <em>Source</em>
+              <select value={picked?.id ?? ""} onChange={(e) => setPick(e.target.value)} aria-label="Chapter source">
+                <option value="">All sources</option>
+                {available.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({sources![s.id]!.length})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : available.length === 1 ? (
+            <span className="clist__pill">
+              <em>Source</em> {available[0].name}
+            </span>
+          ) : null}
           <span className="clist__sort">
             <em>Sort</em>
             <button className={sort !== "date" ? "is-active" : ""} onClick={() => setSort(sort === "desc" ? "asc" : "desc")}>
@@ -276,6 +300,7 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
                   <span className="crow__lang">EN</span>
                   <span className="crow__num">Ch. {c.number}</span>
                   <span className="crow__title">{c.title ?? ""}</span>
+                  {tagged ? <span className="crow__src">{sourceName(sourceOf(c.id))}</span> : null}
                   <span className="crow__when" title={c.group ? `Scanlated by ${c.group}` : undefined}>
                     {ago(c.publishedAt)}
                   </span>

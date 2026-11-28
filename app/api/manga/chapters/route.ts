@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { getManga } from "@/lib/anilist";
 import { findMangaDexId, getChapters, getChapterTitles, type Chapter } from "@/lib/manga/mangadex";
+import { getChapters as getAsuraChapters } from "@/lib/manga/asura";
 import { getChapters as getMangaKatanaChapters } from "@/lib/manga/mangakatana";
+import { getChapters as getMangaPillChapters } from "@/lib/manga/mangapill";
+import type { SourceChapters } from "@/lib/manga/sources";
 
-// GET /api/manga/chapters?id=<anilistId> → { chapters } (readable English chapters, oldest first)
-// MangaDex chapters come first; MangaKatana fills in the numbers MangaDex doesn't host.
+// A scraped source that fails or is blocked just adds no chapters.
+const scraped = (name: string, p: Promise<Chapter[]>) =>
+  p.catch((e) => (console.error(`[api/manga/chapters] ${name}`, e), [] as Chapter[]));
+
+// GET /api/manga/chapters?id=<anilistId> → { sources } (each source's readable English chapters,
+// oldest first; sources without any are left out). The browser merges them (see mergeChapters),
+// so the reader's preferred source can go first.
 // Chapters without a name get the one MangaDex lists for that number, if any.
 export async function GET(req: Request) {
   const id = Number(new URL(req.url).searchParams.get("id"));
@@ -15,17 +23,19 @@ export async function GET(req: Request) {
 
   try {
     const mdId = await findMangaDexId(m.id, m.title);
-    const [mangadex, mangakatana, titles] = await Promise.all([
+    const [mangadex, asura, mangakatana, mangapill, titles] = await Promise.all([
       mdId ? getChapters(mdId) : [],
-      getMangaKatanaChapters(m.title).catch((e) => (console.error("[api/manga/chapters] mangakatana", e), [] as Chapter[])),
+      scraped("asura", getAsuraChapters(m.title)),
+      scraped("mangakatana", getMangaKatanaChapters(m.title)),
+      scraped("mangapill", getMangaPillChapters(m.title)),
       mdId ? getChapterTitles(mdId).catch(() => new Map<string, string>()) : new Map<string, string>(),
     ]);
-    const have = new Set(mangadex.map((c) => parseFloat(c.number)));
-    const chapters = [...mangadex, ...mangakatana.filter((c) => !have.has(parseFloat(c.number)))]
-      .map((c) => (c.title ? c : { ...c, title: titles.get(String(parseFloat(c.number))) ?? null }))
-      .sort((x, y) => parseFloat(x.number) - parseFloat(y.number));
+    const sources: SourceChapters = {};
+    for (const [key, list] of Object.entries({ mangadex, asura, mangakatana, mangapill }) as [keyof SourceChapters, Chapter[]][]) {
+      if (list.length) sources[key] = list.map((c) => (c.title ? c : { ...c, title: titles.get(String(parseFloat(c.number))) ?? null }));
+    }
     return NextResponse.json(
-      { chapters },
+      { sources },
       { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800" } },
     );
   } catch (e) {

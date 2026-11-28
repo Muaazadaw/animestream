@@ -2,8 +2,10 @@
 // fill in chapters MangaDex doesn't host. Ported from the mangal Lua scraper.
 // A manga is matched to AniList by title. Server only.
 
-import { searchMangaTitle, type MediaTitle } from "../anilist";
-import type { Chapter, LatestChapter } from "./mangadex";
+import type { MediaTitle } from "../anilist";
+import type { LatestItem } from "./latest";
+import type { Chapter } from "./mangadex";
+import { decode, norm } from "./text";
 
 const BASE = "https://mangakatana.com";
 const HEADERS = {
@@ -22,11 +24,6 @@ async function page(url: string, revalidate: number): Promise<{ html: string; ur
   const html = await res.text();
   return { html, url: html.match(/<link rel="canonical" href="([^"]+)"/)?.[1] ?? url };
 }
-
-const decode = (s: string) =>
-  s.replace(/&#0?39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-const norm = (s: string) =>
-  s.normalize("NFKC").toLowerCase().replace(/[’']/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 // Manga pages are /manga/<slug>.<id>; the slug doesn't matter, only the id.
 const MANGA_URL = /^https:\/\/mangakatana\.com\/manga\/[^/"]+\.(\d+)\/?$/;
@@ -98,17 +95,11 @@ function updatedAt(text: string, now: number): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-// MangaKatana title → AniList id (null: no exact match), remembered for this server's life.
-const matched = new Map<string, number | null>();
-// New AniList lookups allowed per call. AniList allows 30 a minute across the whole site,
-// so a cold cache fills in over a few page loads instead of all at once.
-const LOOKUPS_PER_CALL = 10;
-
-/** Newest chapters from MangaKatana's latest-updates pages, one per manga, for manga matched to AniList by exact title. */
-export async function getLatestChapters(pages = 10): Promise<LatestChapter[]> {
+/** Newest chapters from MangaKatana's latest-updates pages (matched to AniList by matchLatest). */
+export async function getLatestItems(pages = 10): Promise<LatestItem[]> {
   const now = Date.now();
   const htmls = await Promise.all(Array.from({ length: pages }, (_, i) => page(i ? `${BASE}/page/${i + 1}` : BASE, 300)));
-  const items: { title: string; chapterId: string; number: string; at: string }[] = [];
+  const items: LatestItem[] = [];
   for (const res of htmls) {
     const list = res?.html.match(/id="book_list"[\s\S]*?id="col_right"/)?.[0] ?? "";
     for (const item of list.split('<div class="item"').slice(1)) {
@@ -116,32 +107,10 @@ export async function getLatestChapters(pages = 10): Promise<LatestChapter[]> {
       const title = item.match(/<h3 class="title">\s*<a [^>]*>([^<]+)<\/a>/)?.[1];
       const path = item.match(/<div class="chapter"><a href="[^"]+\/(c[\w.-]+)"/)?.[1];
       const at = updatedAt(item.match(/<div class="date">(?:<i[^>]*><\/i>)?([^<]+)/)?.[1] ?? "", now);
-      if (id && title && path && at) items.push({ title: decode(title), chapterId: `mk-${id}-${path}`, number: path.slice(1), at });
+      if (id && title && path && at) items.push({ names: [decode(title)], chapterId: `mk-${id}-${path}`, number: path.slice(1), at });
     }
   }
-
-  // Unknown titles are looked up one at a time, newest first, until the budget runs out
-  // or AniList refuses; the rest wait for a later call.
-  let budget = LOOKUPS_PER_CALL;
-  const seen = new Set<number>();
-  const out: LatestChapter[] = [];
-  for (const item of items) {
-    if (!matched.has(item.title)) {
-      if (budget-- <= 0) continue;
-      const hits = await searchMangaTitle(item.title).catch(() => null);
-      if (!hits) {
-        budget = 0;
-        continue;
-      }
-      const want = norm(item.title);
-      matched.set(item.title, hits.find((m) => m.names.some((n) => norm(n) === want))?.id ?? null);
-    }
-    const id = matched.get(item.title);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push({ anilistId: id, number: item.number, chapterId: item.chapterId, at: item.at });
-  }
-  return out;
+  return items;
 }
 
 /** True for a page image on MangaKatana's image servers (i1.mangakatana.com and the like). */

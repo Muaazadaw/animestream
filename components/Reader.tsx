@@ -3,9 +3,19 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_READER_PREFS, getReaderPrefs, saveReaderPrefs, useChapters, type Chapter, type ReaderPrefs } from "@/lib/manga/client";
+import {
+  alternatives,
+  DEFAULT_READER_PREFS,
+  getReaderPrefs,
+  recordSourceSpeed,
+  saveReaderPrefs,
+  useChapters,
+  type Chapter,
+  type ReaderPrefs,
+} from "@/lib/manga/client";
+import { sourceName, sourceOf } from "@/lib/manga/sources";
 import { perfTier } from "@/lib/device";
-import { getLists, markChapterRead, type SavedAnime } from "@/lib/storage";
+import { getLists, getPrefs, markChapterRead, type SavedAnime } from "@/lib/storage";
 import { Icon } from "./Menu";
 
 type Pages = { pages: string[]; saver?: string[]; number: string | null; group?: string | null };
@@ -25,7 +35,7 @@ function loadPages(chapterId: string): Promise<Pages> {
   return data;
 }
 
-// MangaKatana pages come through our image proxy. If it fails, try the image directly.
+// MangaKatana and MangaPill pages come through our image proxy. If it fails, try the image directly.
 const PROXY = "/api/manga/image?u=";
 function fallBackToDirect(img: HTMLImageElement, src: string): boolean {
   if (!src.startsWith(PROXY) || img.dataset.direct) return false;
@@ -33,6 +43,18 @@ function fallBackToDirect(img: HTMLImageElement, src: string): boolean {
   img.src = decodeURIComponent(src.slice(PROXY.length));
   return true;
 }
+
+// A chapter whose first page hasn't shown after this long opens from another source instead
+// (Settings → Reading). Chapter ids already given up on, and the note to show after switching,
+// outlive the reader remounting for the new chapter.
+const SLOW_MS = 10_000;
+const gaveUp = new Set<string>();
+let switchNote: string | null = null;
+
+// Page zoom range, in %, and how far + / − move it.
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 300;
+const ZOOM_STEP = 10;
 
 // Two taps this close together, in time and on screen, count as a double tap.
 const DOUBLE_TAP_MS = 280;
@@ -51,7 +73,8 @@ function ago(iso: string | null) {
 /** Full-screen chapter reader: single page, double page or long strip, with a chapter pill and side toolbar. */
 export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapterId: string }) {
   const router = useRouter();
-  const { chapters } = useChapters(manga.id);
+  const { chapters, sources } = useChapters(manga.id);
+  const source = sourceOf(chapterId);
   const [data, setData] = useState<Pages | null>(null);
   const [failed, setFailed] = useState(false);
   const [prefs, setPrefsState] = useState<ReaderPrefs>(DEFAULT_READER_PREFS);
@@ -87,8 +110,10 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   }, [chapterId]);
 
   // Where this chapter sits in the list. A chapter opened from "Latest updates" may be
-  // another group's upload of the same number, so match by number too.
-  const list = chapters ?? [];
+  // another group's upload of the same number, so match by number too. A chapter picked
+  // from one source's list that the merged list doesn't use moves within that source.
+  const own = sources?.[source];
+  const list = !chapters?.some((c) => c.id === chapterId) && own?.some((c) => c.id === chapterId) ? own : (chapters ?? []);
   let index = list.findIndex((c) => c.id === chapterId);
   if (index < 0 && data?.number) index = list.findIndex((c) => c.number === data.number);
   const current = index >= 0 ? list[index] : null;
@@ -96,6 +121,41 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   const prev = index > 0 ? list[index - 1] : null;
   const next = index >= 0 && index < list.length - 1 ? list[index + 1] : null;
   const go = (c: { id: string } | null) => c && router.push(`/manga/${manga.id}/read/${c.id}`);
+
+  // Time to the first page on screen, kept per source so a switch goes to the fastest one.
+  const [shown, setShown] = useState(false);
+  const started = useRef(0);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    setShown(false);
+    started.current = Date.now();
+    setNote(switchNote);
+    switchNote = null;
+  }, [chapterId]);
+  const onPageShown = () => {
+    if (shown) return;
+    setShown(true);
+    recordSourceSpeed(source, Date.now() - started.current);
+  };
+
+  // Failed, or still nothing on screen after SLOW_MS: open this chapter number from the fastest
+  // other source that has it (if there's one left to try).
+  const numberForSwitch = current?.number ?? data?.number ?? null;
+  useEffect(() => {
+    if (shown || !sources || !numberForSwitch || !getPrefs().mangaAutoSwitch) return;
+    const t = setTimeout(
+      () => {
+        gaveUp.add(chapterId);
+        recordSourceSpeed(source, SLOW_MS * 2);
+        const alt = alternatives(sources, numberForSwitch, gaveUp)[0];
+        if (!alt) return;
+        switchNote = `${sourceName(source)} was ${failed ? "unavailable" : "slow"}, so this chapter opened from ${sourceName(sourceOf(alt.id))}.`;
+        router.replace(`/manga/${manga.id}/read/${alt.id}`);
+      },
+      failed ? 0 : Math.max(0, SLOW_MS - (Date.now() - started.current)),
+    );
+    return () => clearTimeout(t);
+  }, [shown, failed, sources, numberForSwitch, chapterId, source, manga.id, router]);
 
   const images = data ? (prefs.saver && data.saver?.length ? data.saver : data.pages) : [];
   // The strip downloads pages in reading order, starting the next as each one finishes, so
@@ -117,16 +177,29 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   const [seen, setSeen] = useState(0);
   useEffect(() => {
     if (!strip) return;
-    const onScroll = () => {
+    // At most once a frame, and only measuring pages up to the first one below the middle of
+    // the screen, so long chapters scroll smoothly on phones.
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
       const imgs = stripRef.current?.querySelectorAll("img");
       if (!imgs?.length) return;
       let i = 0;
-      imgs.forEach((img, n) => img.getBoundingClientRect().top < window.innerHeight / 2 && (i = n));
+      for (let n = 0; n < imgs.length; n++) {
+        if (imgs[n].getBoundingClientRect().top >= window.innerHeight / 2) break;
+        i = n;
+      }
       setSeen(i);
     };
-    onScroll();
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
   }, [strip, data]);
   const at = strip ? seen : page;
   // Pages allowed to download: the next few after those finished, and never fewer than a
@@ -184,6 +257,35 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
     else setPage(prefs.mode === "double" ? i - (i % 2) : i);
   };
 
+  // The progress bar is a scrubber: press it and it widens out with a "Page n" bubble,
+  // slide along it to pick a page, let go to jump there. One segment per page is far too
+  // small to hit on a phone.
+  const [scrub, setScrub] = useState<number | null>(null);
+  const scrubIndex = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const across = prefs.progressBar === "top" || prefs.progressBar === "bottom";
+    const f = across ? (e.clientX - r.left) / r.width : (e.clientY - r.top) / r.height;
+    return Math.min(images.length - 1, Math.max(0, Math.floor(f * images.length)));
+  };
+  // After a jump the bar fades away; pointing at it, tapping where it was, or the controls
+  // coming back shows it again.
+  const [barFaded, setBarFaded] = useState(false);
+  useEffect(() => void (chrome && setBarFaded(false)), [chrome]);
+  const scrubStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    // On a touch screen, the first tap on a faded bar only brings it back.
+    if (barFaded && e.pointerType !== "mouse") return setBarFaded(false);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setScrub(scrubIndex(e));
+  };
+  const scrubMove = (e: React.PointerEvent<HTMLDivElement>) => scrub !== null && setScrub(scrubIndex(e));
+  const scrubEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (scrub === null) return;
+    jumpTo(scrubIndex(e));
+    setScrub(null);
+    setBarFaded(true);
+  };
+
   // Keyboard: ← → pages (or chapters in the strip), ↑ ↓ / Space scroll the strip, Esc closes panels.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -195,6 +297,9 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
       if (e.key === "f") return fullscreen();
       if (e.key === "c") return setPanel((p) => (p === "chapters" ? null : "chapters"));
       if (e.key === "s") return setPanel((p) => (p === "settings" ? null : "settings"));
+      if (e.key === "+" || e.key === "=") return setPrefs({ zoom: Math.min(ZOOM_MAX, prefs.zoom + ZOOM_STEP) });
+      if (e.key === "-") return setPrefs({ zoom: Math.max(ZOOM_MIN, prefs.zoom - ZOOM_STEP) });
+      if (e.key === "0") return setPrefs({ zoom: 100 });
       if (strip && (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === " ")) {
         e.preventDefault();
         const dir = e.key === "ArrowUp" || (e.key === " " && e.shiftKey) ? -1 : 1;
@@ -280,11 +385,12 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
     prefs.fitWidth && prefs.limitWidth ? "limit-w" : "",
     prefs.fitHeight && prefs.limitHeight ? "limit-h" : "",
     prefs.grayscale ? "gray" : "",
+    prefs.zoom !== 100 ? "zoomed" : "",
     chrome ? "" : "is-hidden",
   ].join(" ");
 
   return (
-    <div className={classes} style={{ "--page-gap": `${prefs.margin}px` } as React.CSSProperties}>
+    <div className={classes} style={{ "--page-gap": `${prefs.margin}px`, "--zoom": prefs.zoom / 100 } as React.CSSProperties}>
       <header className="reader__top">
         <Link href={`/manga/${manga.id}`} className="reader__back" aria-label="Back to manga">
           <Icon name="prev" size={18} />
@@ -294,9 +400,15 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           <span>
             Chapter {number}
             {current?.title ? ` · ${current.title}` : ""}
+            <em className="reader__source">{sourceName(source)}</em>
           </span>
         </div>
       </header>
+      {note ? (
+        <button className="reader__note" onClick={() => setNote(null)}>
+          {note} <Icon name="close" size={12} />
+        </button>
+      ) : null}
 
       <main className="reader__pages" onClick={() => setPanel(null)} onTouchStart={onPagesTouchStart} onTouchEnd={onPagesTouchEnd}>
         {failed ? (
@@ -320,7 +432,8 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
                 alt={`Page ${i + 1}`}
                 decoding="async"
                 referrerPolicy="no-referrer"
-                onLoad={(e) => (e.currentTarget.classList.add("is-loaded"), setDone((n) => n + 1))}
+                draggable={false}
+                onLoad={(e) => (e.currentTarget.classList.add("is-loaded"), setDone((n) => n + 1), onPageShown())}
                 onError={(e) => fallBackToDirect(e.currentTarget, src) || setDone((n) => n + 1)}
               />
             ))}
@@ -347,7 +460,15 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           >
             {images.slice(page, page + step).map((src) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={src} src={src} alt={`Page ${page + 1}`} referrerPolicy="no-referrer" onError={(e) => fallBackToDirect(e.currentTarget, src)} />
+              <img
+                key={src}
+                src={src}
+                alt={`Page ${page + 1}`}
+                referrerPolicy="no-referrer"
+                draggable={false}
+                onLoad={onPageShown}
+                onError={(e) => fallBackToDirect(e.currentTarget, src)}
+              />
             ))}
             {/* Preload the next few pages. */}
             {images.slice(page + step, page + step + 3).map((src) => (
@@ -385,16 +506,34 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
 
       {/* Page progress: one segment per page, click to jump */}
       {prefs.progressBar !== "none" && images.length > 1 ? (
-        <div className={`reader__progress reader__progress--${prefs.progressBar}`}>
-          {images.map((_, i) => (
-            <button
-              key={i}
-              className={i <= at + (strip ? 0 : step - 1) ? "is-done" : ""}
-              onClick={() => jumpTo(i)}
-              aria-label={`Page ${i + 1}`}
-              title={`Page ${i + 1}`}
-            />
-          ))}
+        <div
+          className={`reader__progress reader__progress--${prefs.progressBar} ${scrub !== null ? "is-open" : ""} ${barFaded && scrub === null ? "is-faded" : ""}`}
+          onPointerEnter={(e) => e.pointerType === "mouse" && setBarFaded(false)}
+          onPointerDown={scrubStart}
+          onPointerMove={scrubMove}
+          onPointerUp={scrubEnd}
+          onPointerCancel={() => setScrub(null)}
+        >
+          {images.map((_, i) => {
+            const current = i >= at && i <= at + (strip ? 0 : step - 1);
+            return (
+              <button
+                key={i}
+                className={`${i <= at + (strip ? 0 : step - 1) ? "is-done" : ""} ${current ? "is-current" : ""} ${i === scrub ? "is-target" : ""}`}
+                // Pointer presses go through the scrubber; this is for the keyboard (Enter / Space).
+                onClick={(e) => e.detail === 0 && jumpTo(i)}
+                aria-label={`Page ${i + 1}`}
+                aria-current={current ? "page" : undefined}
+                title={`Page ${i + 1}`}
+              />
+            );
+          })}
+          {scrub !== null ? (
+            <span className="reader__scrub" style={{ "--at": `${((scrub + 0.5) / images.length) * 100}%` } as React.CSSProperties}>
+              Page {scrub + 1}
+              <em>/ {images.length}</em>
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -730,6 +869,37 @@ function SettingsPanel({ prefs, setPrefs, onClose }: { prefs: ReaderPrefs; setPr
             onChange={(e) => setPrefs({ dim: Number(e.target.value) })}
             style={{ "--fill": `${(prefs.dim / 80) * 100}%` } as React.CSSProperties}
           />
+
+          <div className="rpanel__row">
+            <h4>Zoom</h4>
+            <span className="rpanel__val">
+              {prefs.zoom !== 100 ? (
+                <button className="rpanel__reset" onClick={() => setPrefs({ zoom: 100 })}>
+                  Reset
+                </button>
+              ) : null}
+              {prefs.zoom}%
+            </span>
+          </div>
+          <div className="rzoom">
+            <button onClick={() => setPrefs({ zoom: Math.max(ZOOM_MIN, prefs.zoom - ZOOM_STEP) })} aria-label="Zoom out" disabled={prefs.zoom <= ZOOM_MIN}>
+              <Icon name="minus" size={14} />
+            </button>
+            <input
+              className="rrange"
+              type="range"
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              step={ZOOM_STEP}
+              value={prefs.zoom}
+              onChange={(e) => setPrefs({ zoom: Number(e.target.value) })}
+              aria-label="Zoom"
+              style={{ "--fill": `${((prefs.zoom - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN)) * 100}%` } as React.CSSProperties}
+            />
+            <button onClick={() => setPrefs({ zoom: Math.min(ZOOM_MAX, prefs.zoom + ZOOM_STEP) })} aria-label="Zoom in" disabled={prefs.zoom >= ZOOM_MAX}>
+              <Icon name="plus" size={14} />
+            </button>
+          </div>
         </div>
       )}
     </aside>
@@ -744,6 +914,8 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
     ["C", "Chapter list"],
     ["S", "Settings"],
     ["F", "Fullscreen"],
+    ["+ / −", "Zoom in / out"],
+    ["0", "Reset zoom"],
     ["Esc", "Close this panel"],
   ];
   return (

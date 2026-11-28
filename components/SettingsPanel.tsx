@@ -11,6 +11,7 @@ import {
   pullFromAniList,
   setAutoSync,
 } from "@/lib/anilist-sync";
+import { MANGA_SOURCES } from "@/lib/manga/sources";
 import type { SettingsSection } from "@/lib/settings-modal";
 import { LIST_STATUSES, type LibraryState } from "@/lib/state";
 import {
@@ -26,6 +27,7 @@ import {
   type Prefs,
 } from "@/lib/storage";
 import { logout, syncNow, useAccount } from "@/lib/sync";
+import { usePrefs as useLivePrefs } from "@/lib/use-prefs";
 
 const NAV: { group: string; items: { id: SettingsSection; label: string; icon: string }[] }[] = [
   {
@@ -43,6 +45,7 @@ const NAV: { group: string; items: { id: SettingsSection; label: string; icon: s
       { id: "appearance", label: "Appearance", icon: "image" },
       { id: "language", label: "Language", icon: "cc" },
       { id: "watching", label: "Watching", icon: "play" },
+      { id: "reading", label: "Reading", icon: "book" },
       { id: "history", label: "History & progress", icon: "rewatch" },
     ],
   },
@@ -156,15 +159,8 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
 }
 
 function usePrefs(): [Prefs | null, (p: Partial<Prefs>) => void] {
-  const [prefs, setState] = useState<Prefs | null>(null);
-  useEffect(() => setState(getPrefs()), []);
-  return [
-    prefs,
-    (p) => {
-      setPrefs(p);
-      setState(getPrefs());
-    },
-  ];
+  // Follows changes as they're made, here or in another tab.
+  return [useLivePrefs(), setPrefs];
 }
 
 // --- Panel -----------------------------------------------------------------------
@@ -288,6 +284,7 @@ export default function SettingsPanel({
               {id === "appearance" ? <AppearanceSection /> : null}
               {id === "language" ? <LanguageSection /> : null}
               {id === "watching" ? <WatchingSection /> : null}
+              {id === "reading" ? <ReadingSection /> : null}
               {id === "history" ? <HistorySection /> : null}
               {id.startsWith("keys-") ? <ShortcutsSection which={id} /> : null}
             </div>
@@ -658,6 +655,37 @@ function LanguageSection() {
         <Segmented value={prefs.audio ?? "sub"} options={[["sub", "Subtitled"], ["dub", "Dubbed"]]} onChange={(v) => update({ audio: v })} />
       </Row>
       <Row title="Subtitle style" desc="Size, colours, outline and timing are set from the Aa button on the video." where="device" />
+    </Group>
+  );
+}
+
+function ReadingSection() {
+  const [prefs, update] = usePrefs();
+  if (!prefs) return null;
+
+  return (
+    <Group title="Manga sources">
+      <Row
+        title="Preferred source"
+        desc="Where chapters come from first. Other sources only fill in chapters it doesn't have."
+        where="device"
+      >
+        <select className="sselect" value={prefs.mangaSource} onChange={(e) => update({ mangaSource: e.target.value })}>
+          <option value="">Automatic</option>
+          {MANGA_SOURCES.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <Row
+        title="Switch slow sources"
+        desc="If a chapter fails or takes more than 10 seconds to load, open it from the fastest other source that has it."
+        where="device"
+      >
+        <Switch checked={prefs.mangaAutoSwitch} onChange={(v) => update({ mangaAutoSwitch: v })} label="Switch slow sources" />
+      </Row>
     </Group>
   );
 }

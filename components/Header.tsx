@@ -9,6 +9,8 @@ import { openSettings } from "@/lib/settings-modal";
 import AccountMenu from "./AccountMenu";
 import Logo, { LogoMark } from "./Logo";
 import { Icon } from "./Menu";
+import PickForMe from "./PickForMe";
+import SearchSuggestions from "./SearchSuggestions";
 
 const NAV = [
   { href: "/", label: "Home", icon: "home" },
@@ -178,9 +180,11 @@ export default function Header() {
             onBlur={(e) => !e.currentTarget.value && setSearchOpen(false)}
             onKeyDown={(e) => e.key === "Escape" && (setSearchOpen(false), e.currentTarget.blur())}
           />
+          <PickForMe manga={manga} />
           <button type="submit" aria-label="Search">
             <Icon name="search" size={17} />
           </button>
+          <SearchSuggestions q={q} manga={manga} onPick={() => (setQ(""), setSearchOpen(false), searchRef.current?.blur())} />
         </form>
         <AccountMenu />
       </header>
