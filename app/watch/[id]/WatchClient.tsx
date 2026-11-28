@@ -138,6 +138,65 @@ export default function WatchClient({ anime, related, recommendations, providers
     activeRef.current?.scrollIntoView({ block: "nearest" });
   }, [ep, mounted, view]);
 
+  // Automatic server switching: a server that can't load this episode, errors, never shows a
+  // picture, or sits buffering is swapped for the next one that has the episode in this audio.
+  // Each server is tried once per episode; one picked by hand is left alone. Where it lands
+  // becomes this show's server next time.
+  const tried = useRef(new Set<string>());
+  const manual = useRef(false);
+  const [switchNote, setSwitchNote] = useState<string | null>(null);
+  useEffect(() => {
+    tried.current = new Set();
+    manual.current = false;
+  }, [ep, audio]);
+  useEffect(() => {
+    if (!switchNote) return;
+    const t = setTimeout(() => setSwitchNote(null), 8000);
+    return () => clearTimeout(t);
+  }, [switchNote]);
+
+  /** Moves to the next untried server for this episode. False if there's none left (or the viewer chose this one). */
+  function failOver(why: string): boolean {
+    if (manual.current) return false;
+    tried.current.add(sourceId);
+    const alt = providers.find((p) => !tried.current.has(p.id) && hasAudio(p, audio) && p.episodes.some((e) => e.number === ep));
+    if (!alt) return false;
+    setSwitchNote(`${provider.name} ${why}, so it switched to ${alt.name}.`);
+    setSourceId(alt.id);
+    return true;
+  }
+
+  // Watch the player: no picture within 15 s, a player error, or 20 s of buffering mid-play.
+  useEffect(() => {
+    if (!stream) return;
+    const started = Date.now();
+    let ok = false;
+    let waitingSince = 0;
+    const timer = setInterval(() => {
+      const video = document.querySelector<HTMLVideoElement>(".watch__main .player__host video");
+      const failed = !!document.querySelector(".watch__main .player__error");
+      if (!ok && video && video.readyState >= 2) {
+        ok = true;
+        // Landed on a working server after a switch: start here next time.
+        if (tried.current.size && !manual.current) setPrefs({ sourceFor: { ...getPrefs().sourceFor, [anime.id]: sourceId } });
+      }
+      if (failed || (!ok && Date.now() - started > 15000)) {
+        clearInterval(timer);
+        failOver(failed ? "couldn't play this episode" : "wasn't loading");
+        return;
+      }
+      if (ok && video && !video.paused && video.readyState < 3) {
+        waitingSince ||= Date.now();
+        if (Date.now() - waitingSince > 20000) {
+          clearInterval(timer);
+          failOver("kept buffering");
+        }
+      } else waitingSince = 0;
+    }, 1000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream]);
+
   // Load the stream whenever episode, server or audio changes.
   useEffect(() => {
     if (!mounted || !current) return;
@@ -158,7 +217,7 @@ export default function WatchClient({ anime, related, recommendations, providers
         setStream(data as Stream);
       })
       .catch((e: Error) => {
-        if (e.name !== "AbortError") setError(e.message);
+        if (e.name !== "AbortError" && !failOver("couldn't load this episode")) setError(e.message);
       })
       .finally(() => {
         if (!ctrl.signal.aborted) setLoading(false);
@@ -183,6 +242,7 @@ export default function WatchClient({ anime, related, recommendations, providers
   );
 
   function pickSource(id: string) {
+    manual.current = true;
     setSourceId(id);
     setPrefs({ sourceFor: { ...getPrefs().sourceFor, [anime.id]: id } });
   }
@@ -228,6 +288,11 @@ export default function WatchClient({ anime, related, recommendations, providers
 
       <div className="watch__layout">
         <div className="watch__main">
+          {switchNote ? (
+            <button className="watch__switch" onClick={() => setSwitchNote(null)}>
+              <Icon name="bolt" size={14} /> {switchNote}
+            </button>
+          ) : null}
           {stream ? (
             playerKind === "artplayer" ? (
               <ArtPlayerView
