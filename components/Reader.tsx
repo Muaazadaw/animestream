@@ -517,6 +517,19 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
       {/* Darken the pages (under the controls) */}
       {prefs.dim > 0 ? <div className="reader__dim" style={{ opacity: prefs.dim / 100 }} /> : null}
 
+      {/* Zoom, bottom right (also + / − / 0 on the keyboard and in Settings). */}
+      <div className="reader__zoom">
+        <button onClick={() => setPrefs({ zoom: Math.max(ZOOM_MIN, prefs.zoom - ZOOM_STEP) })} disabled={prefs.zoom <= ZOOM_MIN} aria-label="Zoom out">
+          <Icon name="minus" size={14} />
+        </button>
+        <button className="reader__zoomval" onClick={() => setPrefs({ zoom: 100 })} title="Reset zoom" aria-label="Reset zoom">
+          {(prefs.zoom / 100).toFixed(1)}×
+        </button>
+        <button onClick={() => setPrefs({ zoom: Math.min(ZOOM_MAX, prefs.zoom + ZOOM_STEP) })} disabled={prefs.zoom >= ZOOM_MAX} aria-label="Zoom in">
+          <Icon name="plus" size={14} />
+        </button>
+      </div>
+
       {/* Page progress: one segment per page, click to jump */}
       {prefs.progressBar !== "none" && images.length > 1 ? (
         <div

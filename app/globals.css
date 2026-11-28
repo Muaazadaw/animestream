@@ -88,6 +88,12 @@ body { padding-left: var(--rail); }
 .ssug__text strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ssug__text span { font-size: 12px; color: var(--muted); }
 .ssug__empty { margin: 0; padding: 10px; font-size: 13px; color: var(--muted); }
+/* "View all results": stays at the bottom of the list while it scrolls. */
+.ssug__all {
+  position: sticky; bottom: -6px; display: block; margin: 4px -6px -6px; padding: 11px 12px; text-align: center;
+  font-size: 13px; font-weight: 700; color: var(--accent); background: rgb(20, 20, 28); border-top: 1px solid var(--line);
+}
+.ssug__all:hover { color: var(--text); background: rgb(28, 28, 38); }
 .search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; padding: 9px 14px; font-size: 14px; }
 .search button { background: none; border: 0; border-left: 1px solid var(--line); padding: 0 14px; cursor: pointer; color: var(--muted); display: grid; place-items: center; }
 .search:focus-within { border-color: var(--accent-2); }
@@ -1642,6 +1648,21 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .reader__page:has(img.is-tall) { height: auto; align-items: flex-start; }
 .reader .reader__page img.is-tall { max-height: none; height: auto; width: min(100%, 760px); }
 .reader--double .reader__page img.is-tall { width: min(calc(50% - var(--page-gap, 0px) / 2), 760px); }
+/* Single / double page: the page fills the screen and nothing scrolls; chapters change from
+   the pill or by turning past the last page. A tall webtoon page, fit-width or zoom scrolls
+   inside the page area only. */
+html:has(.reader--single), html:has(.reader--double),
+body:has(.reader--single), body:has(.reader--double) { overflow: hidden; }
+.reader--single, .reader--double { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.reader--single .reader__pages, .reader--double .reader__pages { height: 100%; padding: 0; overflow: hidden; }
+.reader--single .reader__page, .reader--double .reader__page { height: 100vh; height: 100dvh; }
+.reader--single .reader__end, .reader--double .reader__end { display: none; }
+.reader--single .reader__page:has(img.is-tall), .reader--double .reader__page:has(img.is-tall),
+.reader--single.fit-w:not(.fit-h) .reader__page, .reader--double.fit-w:not(.fit-h) .reader__page {
+  height: 100dvh; overflow-y: auto; align-items: flex-start;
+}
+.reader--single.zoomed .reader__page img:not(.reader__preload),
+.reader--double.zoomed .reader__page img:not(.reader__preload) { height: calc(100dvh * var(--zoom)); }
 .reader__dim { position: fixed; inset: 0; z-index: 35; background: #000; pointer-events: none; }
 
 /* Reader: page progress bar */
@@ -1677,6 +1698,19 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .reader__progress--top, .reader__progress--bottom { left: 0; right: 0; height: var(--bar); }
 .reader__progress--top { top: 0; }
 .reader__progress--bottom { bottom: 0; padding-bottom: var(--safe-bottom); }
+/* Desktop (mouse): a slim strip without dividers, widening to the numbered blocks while
+   pointed at or dragged. Phones keep the blocks. */
+@media (min-width: 761px) and (hover: hover) {
+  .reader { --bar: 10px; }
+  .reader__progress { gap: 0; background: transparent; transition: opacity 0.25s ease, transform 0.25s ease, width 0.15s ease, height 0.15s ease; }
+  .reader__progress button { font-size: 0; }
+  .reader__progress:hover, .reader__progress.is-open { gap: 1px; background: rgba(8, 8, 12, 0.35); }
+  .reader__progress:hover button, .reader__progress.is-open button { font-size: 10px; }
+  .reader__progress--left:hover, .reader__progress--right:hover,
+  .reader__progress--left.is-open, .reader__progress--right.is-open { width: 28px; }
+  .reader__progress--top:hover, .reader__progress--bottom:hover,
+  .reader__progress--top.is-open, .reader__progress--bottom.is-open { height: 28px; }
+}
 /* The bar floats over the pages (it's hidden most of the time); the controls keep clear of it. */
 .reader:has(.reader__progress--top) .reader__top { top: var(--bar); }
 .reader:has(.reader__progress--left) .reader__top { left: var(--bar); }
@@ -1692,17 +1726,30 @@ html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { dis
 .reader__progress--bottom .reader__scrub { bottom: calc(100% + 8px); left: var(--at); transform: translateX(-50%); }
 .reader:has(.reader__progress--right) .reader__tools { right: calc(var(--bar) + 8px); }
 
-/* Reader: chapter pill sits at the top on bigger screens */
-@media (min-width: 761px) {
-  .reader__pill { top: calc(10px + var(--safe-top)); bottom: auto; }
-  .reader.is-hidden .reader__pill { transform: translate(-50%, -160%); }
+/* Reader: zoom, bottom right; leaves with the other controls. */
+.reader__zoom {
+  position: fixed; right: 16px; bottom: calc(16px + var(--safe-bottom)); z-index: 40; display: flex; align-items: center; gap: 2px; padding: 3px;
+  border-radius: 999px; background: rgba(20, 20, 28, 0.92); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px); transition: transform 0.25s, opacity 0.25s;
 }
-/* Phones: top right, in line with the back button and title (which stop short of it). */
+.reader__zoom button { display: grid; place-items: center; height: 30px; min-width: 30px; border: 0; border-radius: 999px; background: none; color: var(--text); cursor: pointer; }
+.reader__zoom button:hover:not(:disabled) { background: var(--bg-3); }
+.reader__zoom button:disabled { opacity: 0.3; cursor: default; }
+.reader__zoom .reader__zoomval { padding: 0 6px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.reader.is-hidden .reader__zoom { transform: translateY(160%); opacity: 0; }
+.reader:has(.reader__progress--right) .reader__zoom { right: calc(var(--bar) + 8px); }
+.reader:has(.reader__progress--bottom) .reader__zoom { bottom: calc(var(--bar) + 10px + var(--safe-bottom)); }
+@media (max-width: 760px) { .reader__zoom { right: 10px; } }
+/* Reader: chapter pill at the top right, in line with the back button and title (which stop
+   short of it). */
+.reader__pill { top: calc(10px + var(--safe-top)); bottom: auto; left: auto; right: 16px; transform: none; }
+.reader.is-hidden .reader__pill { transform: translateY(-160%); }
+.reader__top { padding-right: 240px; }
+.reader:has(.reader__progress--right) .reader__pill { right: calc(var(--bar) + 8px); }
 @media (max-width: 760px) {
-  .reader__pill { top: calc(10px + var(--safe-top)); bottom: auto; left: auto; right: 10px; transform: none; padding: 2px; }
+  .reader__pill { right: 10px; padding: 2px; }
   .reader__pill button { height: 32px; min-width: 30px; }
   .reader__pill .reader__pillmid { padding: 0 6px; font-size: 12px; }
-  .reader.is-hidden .reader__pill { transform: translateY(-160%); }
   .reader__top { padding-right: 176px; }
   .reader:has(.reader__progress--right) .reader__pill { right: calc(var(--bar) + 6px); }
 }

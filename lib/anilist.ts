@@ -340,7 +340,7 @@ export async function searchAnime(p: SearchParams) {
         pageInfo { hasNextPage currentPage }
         media(type: $type, search: $search, genre_in: $genres, tag_in: $tags, format_in: $formats, status: $status,
               seasonYear: $year, startDate_like: $yearLike, season: $season, source: $source, countryOfOrigin: $country,
-              averageScore_greater: $minScore, sort: $sort, isAdult: false) { ${CARD_FIELDS} }
+              averageScore_greater: $minScore, sort: $sort, isAdult: false) { ${CARD_FIELDS} startDate { year month day } }
       }
     }`,
     {
@@ -362,6 +362,15 @@ export async function searchAnime(p: SearchParams) {
     },
     600,
   );
+  // A text search with no sort picked: AniList chooses the matches, listed in the order they
+  // came out, so a franchise reads Season 1, 2, 3… with its specials and movies in between.
+  if (p.search && !p.sort) {
+    const at = (m: MediaCard & { startDate?: { year: number | null; month: number | null; day: number | null } }) => {
+      const d = m.startDate;
+      return d?.year ? d.year * 10000 + (d.month ?? 12) * 100 + (d.day ?? 31) : Infinity;
+    };
+    data.Page.media.sort((a, b) => at(a) - at(b));
+  }
   return data.Page;
 }
 

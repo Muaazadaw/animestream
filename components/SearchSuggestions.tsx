@@ -49,6 +49,15 @@ export default function SearchSuggestions({ q, manga, onPick }: { q: string; man
           </span>
         </Link>
       ))}
+      {sorted.length > 0 ? (
+        <Link
+          href={`/search?${new URLSearchParams({ ...(manga ? { type: "manga" } : {}), q: q.trim() })}`}
+          className="ssug__all"
+          onClick={onPick}
+        >
+          View all results for “{q.trim()}”
+        </Link>
+      ) : null}
     </div>
   );
 }

@@ -94,6 +94,7 @@ export default function SearchFilters({
   formats,
   statuses,
   sorts,
+  sortLabel = "Most popular",
   sources,
   countries,
   seasons,
@@ -105,6 +106,8 @@ export default function SearchFilters({
   formats: Option[];
   statuses: Option[];
   sorts: Option[];
+  /** What the sort menu says when no sort is picked (the default order). */
+  sortLabel?: string;
   sources: Option[];
   countries: Option[];
   seasons: Option[];
@@ -133,7 +136,7 @@ export default function SearchFilters({
         <MultiSelect label="Formats" options={formats} value={list("formats")} onChange={(v) => setList("formats", v)} />
         <Select label="Status" options={statuses} value={values.status ?? ""} onChange={(v) => set("status", v)} />
         <Select label="Year" options={years} value={values.year ?? ""} onChange={(v) => set("year", v)} />
-        <Select label="Most popular" options={sorts} value={values.sort ?? ""} onChange={(v) => set("sort", v)} />
+        <Select label={sortLabel} options={sorts} value={values.sort ?? ""} onChange={(v) => set("sort", v)} />
         <div className="sfilters__tools">
           <button
             type="button"

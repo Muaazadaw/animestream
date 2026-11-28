@@ -164,6 +164,7 @@ export default async function SearchPage({ searchParams }: Props) {
           formats={opt(manga ? MANGA_FORMATS : FORMATS)}
           statuses={opt(STATUSES)}
           sorts={SORTS.map(([value, label]) => ({ value, label }))}
+          sortLabel={sp.q ? "Season order" : "Most popular"}
           sources={opt(SOURCES)}
           countries={COUNTRIES.map(([value, label]) => ({ value, label }))}
           seasons={manga ? [] : opt(SEASONS)}

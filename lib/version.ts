@@ -1,7 +1,7 @@
 // Written by .githooks/pre-commit on every commit. Don't edit by hand.
 
 /** How many updates (commits) the site has had. */
-export const UPDATES = 81;
+export const UPDATES = 82;
 /** Shown in the footer. */
 export const VERSION = `1.${UPDATES}`;
 /** Day of the latest update. */
