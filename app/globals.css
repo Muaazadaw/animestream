@@ -1555,8 +1555,18 @@ html:has(.reader) { scrollbar-width: none; }
 html:has(.reader)::-webkit-scrollbar, body:has(.reader)::-webkit-scrollbar { display: none; }
 
 /* Reader: pages, sizing, colour */
-.reader__strip { display: flex; flex-direction: column; align-items: center; width: 100%; gap: var(--page-gap, 0px); }
+.reader__strip { display: flex; flex-direction: column; align-items: center; width: 100%; gap: var(--page-gap, 0px); touch-action: manipulation; }
 .reader__strip img { display: block; max-width: min(100%, 760px); height: auto; min-height: 300px; background: #0d0d12; }
+/* A page still on its way shimmers instead of sitting there as a black box. */
+.reader__strip img:not(.is-loaded) {
+  width: min(100%, 760px);
+  min-height: 70vh;
+  background-image: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: reader-shimmer 1.4s linear infinite;
+}
+@keyframes reader-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@media (prefers-reduced-motion: reduce) { .reader__strip img:not(.is-loaded) { animation: none; } }
 .fit-w .reader__strip img { max-width: 100%; }
 .fit-w.limit-w .reader__strip img { max-width: min(100%, 1000px); }
 .stretch .reader__strip img { width: min(100%, 760px); }

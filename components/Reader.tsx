@@ -13,6 +13,31 @@ type Panel = "chapters" | "settings" | "help" | null;
 
 const CHAPTERS_PER_PAGE = 50;
 
+// Page lists by chapter id, so a chapter fetched ahead of time opens straight away.
+// MangaDex image links expire after ~15 minutes, so entries are kept for 10.
+const pagesCache = new Map<string, { at: number; data: Promise<Pages> }>();
+function loadPages(chapterId: string): Promise<Pages> {
+  const hit = pagesCache.get(chapterId);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.data;
+  const data = fetch(`/api/manga/pages?chapter=${chapterId}`).then((r) => (r.ok ? (r.json() as Promise<Pages>) : Promise.reject()));
+  data.catch(() => pagesCache.delete(chapterId));
+  pagesCache.set(chapterId, { at: Date.now(), data });
+  return data;
+}
+
+// MangaKatana pages come through our image proxy. If it fails, try the image directly.
+const PROXY = "/api/manga/image?u=";
+function fallBackToDirect(img: HTMLImageElement, src: string): boolean {
+  if (!src.startsWith(PROXY) || img.dataset.direct) return false;
+  img.dataset.direct = "1";
+  img.src = decodeURIComponent(src.slice(PROXY.length));
+  return true;
+}
+
+// Two taps this close together, in time and on screen, count as a double tap.
+const DOUBLE_TAP_MS = 280;
+const DOUBLE_TAP_PX = 40;
+
 function ago(iso: string | null) {
   if (!iso) return "";
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -53,9 +78,8 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
     setPage(0);
     marked.current = false;
     window.scrollTo(0, 0);
-    fetch(`/api/manga/pages?chapter=${chapterId}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d: Pages) => live && setData(d))
+    loadPages(chapterId)
+      .then((d) => live && setData(d))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
@@ -74,9 +98,16 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   const go = (c: { id: string } | null) => c && router.push(`/manga/${manga.id}/read/${c.id}`);
 
   const images = data ? (prefs.saver && data.saver?.length ? data.saver : data.pages) : [];
-  // Pages loaded straight away in the strip; the rest load as you scroll. Fewer on low-memory phones.
-  const [eager, setEager] = useState(3);
-  useEffect(() => setEager(perfTier() === "low" ? 1 : 3), []);
+  // The strip downloads pages in reading order, starting the next as each one finishes, so
+  // pages are ready before you reach them (some sources take seconds per image). Proxied
+  // pages come from our own server, which can take a whole chapter at once; fewer at once
+  // on low-memory phones.
+  const [lowEnd, setLowEnd] = useState(false);
+  useEffect(() => setLowEnd(perfTier() === "low"), []);
+  const proxied = !!images[0]?.startsWith(PROXY);
+  const parallel = proxied ? (lowEnd ? 4 : 24) : lowEnd ? 2 : 4;
+  const [done, setDone] = useState(0);
+  useEffect(() => setDone(0), [data, prefs.saver]);
   const strip = prefs.mode === "vertical";
   const step = prefs.mode === "double" ? 2 : 1;
   const lastPage = Math.max(0, images.length - 1);
@@ -98,6 +129,27 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
     return () => window.removeEventListener("scroll", onScroll);
   }, [strip, data]);
   const at = strip ? seen : page;
+  // Pages allowed to download: the next few after those finished, and never fewer than a
+  // few past the one on screen, so jumping ahead gets what you're looking at first.
+  const limit = Math.min(images.length, Math.max(done, seen) + parallel);
+
+  // Near the end of a chapter, fetch the next one's page list and first images.
+  const prefetched = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data || !next || prefetched.current === next.id) return;
+    const nearEnd = strip ? done >= images.length - 1 || seen >= images.length - 4 : page + step * 3 > lastPage;
+    if (!nearEnd) return;
+    prefetched.current = next.id;
+    loadPages(next.id)
+      .then((d) => {
+        for (const src of (prefs.saver && d.saver?.length ? d.saver : d.pages).slice(0, 6)) {
+          const img = new Image();
+          img.referrerPolicy = "no-referrer";
+          img.src = src;
+        }
+      })
+      .catch(() => {});
+  }, [data, next, strip, done, seen, page, step, lastPage, images.length, prefs.saver]);
 
   // Reaching the end of the chapter counts it as read.
   const markRead = () => {
@@ -178,6 +230,46 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
   // Single / double page on phones: swipe left for the next page, right for the previous one.
   const touch = useRef<{ x: number; y: number } | null>(null);
 
+  // Double-tap anywhere on the pages shows (or hides) the top bar, chapter pill and toolbar.
+  // A tap on a single / double page turns it, so on touch screens that turn waits a moment
+  // in case a second tap follows.
+  const tapStart = useRef<{ x: number; y: number; t: number } | null>(null);
+  const lastTap = useRef<{ x: number; y: number; t: number } | null>(null);
+  const lastTouchEnd = useRef(0);
+  const pendingTurn = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (pendingTurn.current && clearTimeout(pendingTurn.current)), []);
+  const onPagesTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    tapStart.current = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, t: Date.now() } : null;
+  };
+  const onPagesTouchEnd = (e: React.TouchEvent) => {
+    lastTouchEnd.current = Date.now();
+    const start = tapStart.current;
+    tapStart.current = null;
+    const t = e.changedTouches[0];
+    // Only quick taps that stay put count; swipes, scrolls and pinches don't.
+    if (!start || e.touches.length || Math.hypot(t.clientX - start.x, t.clientY - start.y) > 15 || Date.now() - start.t > 300) return;
+    const prev = lastTap.current;
+    const tap = { x: t.clientX, y: t.clientY, t: Date.now() };
+    if (prev && tap.t - prev.t < DOUBLE_TAP_MS && Math.hypot(tap.x - prev.x, tap.y - prev.y) < DOUBLE_TAP_PX) {
+      e.preventDefault(); // no click (or zoom) from the second tap
+      if (pendingTurn.current) clearTimeout(pendingTurn.current);
+      pendingTurn.current = null;
+      lastTap.current = null;
+      setChrome((c) => !c);
+    } else {
+      lastTap.current = tap;
+    }
+  };
+  const tapTurn = (dir: 1 | -1) => {
+    if (Date.now() - lastTouchEnd.current > 600) return turn(dir); // mouse: turn right away
+    if (pendingTurn.current) clearTimeout(pendingTurn.current);
+    pendingTurn.current = setTimeout(() => {
+      pendingTurn.current = null;
+      turn(dir);
+    }, DOUBLE_TAP_MS);
+  };
+
   const toggle = (p: Panel) => setPanel(panel === p ? null : p);
   const classes = [
     "reader",
@@ -206,7 +298,7 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
         </div>
       </header>
 
-      <main className="reader__pages" onClick={() => setPanel(null)}>
+      <main className="reader__pages" onClick={() => setPanel(null)} onTouchStart={onPagesTouchStart} onTouchEnd={onPagesTouchEnd}>
         {failed ? (
           <div className="reader__msg">
             <p>Couldn&apos;t load this chapter.</p>
@@ -222,7 +314,15 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           <div className="reader__strip" ref={stripRef}>
             {images.map((src, i) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={src} src={src} alt={`Page ${i + 1}`} loading={i < eager ? "eager" : "lazy"} decoding="async" referrerPolicy="no-referrer" />
+              <img
+                key={src}
+                src={i < limit ? src : undefined}
+                alt={`Page ${i + 1}`}
+                decoding="async"
+                referrerPolicy="no-referrer"
+                onLoad={(e) => (e.currentTarget.classList.add("is-loaded"), setDone((n) => n + 1))}
+                onError={(e) => fallBackToDirect(e.currentTarget, src) || setDone((n) => n + 1)}
+              />
             ))}
           </div>
         ) : (
@@ -230,7 +330,7 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
             className="reader__page"
             onClick={(e) => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              turn(e.clientX - r.left > r.width / 2 ? 1 : -1);
+              tapTurn(e.clientX - r.left > r.width / 2 ? 1 : -1);
             }}
             onTouchStart={(e) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY })}
             onTouchEnd={(e) => {
@@ -247,10 +347,10 @@ export default function Reader({ manga, chapterId }: { manga: SavedAnime; chapte
           >
             {images.slice(page, page + step).map((src) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={src} src={src} alt={`Page ${page + 1}`} referrerPolicy="no-referrer" />
+              <img key={src} src={src} alt={`Page ${page + 1}`} referrerPolicy="no-referrer" onError={(e) => fallBackToDirect(e.currentTarget, src)} />
             ))}
-            {/* Preload what comes next. */}
-            {images.slice(page + step, page + step * 2).map((src) => (
+            {/* Preload the next few pages. */}
+            {images.slice(page + step, page + step + 3).map((src) => (
               // eslint-disable-next-line @next/next/no-img-element
               <img key={`pre-${src}`} src={src} alt="" referrerPolicy="no-referrer" className="reader__preload" />
             ))}
@@ -658,7 +758,9 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
             <span>{what}</span>
           </div>
         ))}
-        <p className="muted rpanel__note">On phones, tap the left or right side of a page (or swipe) to turn it.</p>
+        <p className="muted rpanel__note">
+          On phones, tap the left or right side of a page (or swipe) to turn it. Double-tap to show or hide the controls.
+        </p>
       </div>
     </aside>
   );

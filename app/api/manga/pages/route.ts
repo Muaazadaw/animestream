@@ -9,9 +9,11 @@ export async function GET(req: Request) {
   if (MANGAKATANA_ID.test(chapter)) {
     const mk = await getMangaKatanaPages(chapter);
     if (!mk) return NextResponse.json({ error: "Couldn't load this chapter" }, { status: 404 });
+    // Served through /api/manga/image so a whole chapter can load at once (see there).
     // MangaKatana has no data-saver images, so both lists are the same.
+    const pages = mk.pages.map((p) => `/api/manga/image?u=${encodeURIComponent(p)}`);
     return NextResponse.json(
-      { pages: mk.pages, saver: mk.pages, number: mk.number, group: null },
+      { pages, saver: pages, number: mk.number, group: null },
       { headers: { "Cache-Control": "public, s-maxage=300" } },
     );
   }

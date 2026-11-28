@@ -25,7 +25,8 @@ async function page(url: string, revalidate: number): Promise<{ html: string; ur
 
 const decode = (s: string) =>
   s.replace(/&#0?39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-const norm = (s: string) => s.toLowerCase().replace(/[’']/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const norm = (s: string) =>
+  s.normalize("NFKC").toLowerCase().replace(/[’']/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 // Manga pages are /manga/<slug>.<id>; the slug doesn't matter, only the id.
 const MANGA_URL = /^https:\/\/mangakatana\.com\/manga\/[^/"]+\.(\d+)\/?$/;
@@ -141,6 +142,16 @@ export async function getLatestChapters(pages = 10): Promise<LatestChapter[]> {
     out.push({ anilistId: id, number: item.number, chapterId: item.chapterId, at: item.at });
   }
   return out;
+}
+
+/** True for a page image on MangaKatana's image servers (i1.mangakatana.com and the like). */
+export function isImageUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && /^i\d*\.mangakatana\.com$/.test(u.hostname);
+  } catch {
+    return false;
+  }
 }
 
 /** Page image URLs for a MangaKatana chapter id. */
