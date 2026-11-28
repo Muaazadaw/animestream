@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prettyEnum, statusDot } from "@/lib/anilist";
+import { formatLabel, statusDot } from "@/lib/anilist";
 import { Icon } from "./Menu";
 
 export type SideMedia = {
@@ -38,7 +38,7 @@ export default function SideMediaList({ title, items }: { title: string; items: 
               </span>
               <span className="sidelist__meta">
                 {m.relation ? <em>{m.relation}</em> : null}
-                {m.format ? <span>{prettyEnum(m.format)}</span> : null}
+                {m.format ? <span>{formatLabel(m)}</span> : null}
                 {m.year ? <span>{m.year}</span> : null}
                 {m.episodes ? (
                   <span>

@@ -13,6 +13,8 @@ export type SavedAnime = {
   type?: "ANIME" | "MANGA";
   /** Manga only: total chapters, if known. */
   chapters?: number | null;
+  /** Manga only: "KR" / "CN" / "TW" make it a manhwa or manhua (see formatLabel). */
+  countryOfOrigin?: string | null;
 };
 
 const MANGA_FORMATS = new Set(["MANGA", "NOVEL", "ONE_SHOT"]);

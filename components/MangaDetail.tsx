@@ -176,7 +176,7 @@ function pageWindow(current: number, pages: number): (number | "gap")[] {
 }
 
 /** All readable chapters as one list: search, sort, pages of 20, and a bookmark on where you're up to. */
-export function ChapterList({ mangaId }: { mangaId: number }) {
+export function ChapterList({ mangaId, novel = false }: { mangaId: number; novel?: boolean }) {
   const { chapters: merged, sources, error } = useChapters(mangaId);
   // "" = every source merged; otherwise one source's own list. Only sources with chapters are offered.
   const [pick, setPick] = useState("");
@@ -285,7 +285,11 @@ export function ChapterList({ mangaId }: { mangaId: number }) {
           </div>
         ) : chapters.length === 0 ? (
           <p className="empty clist__empty">
-            {error ? "Couldn't load chapters right now. Try again in a bit." : "No chapters available to read on Mayoi yet."}
+            {novel
+              ? "Novels can't be read on Mayoi yet."
+              : error
+                ? "Couldn't load chapters right now. Try again in a bit."
+                : "No chapters available to read on Mayoi yet."}
           </p>
         ) : shown.length === 0 ? (
           <p className="empty clist__empty">No chapter matches “{q}”.</p>

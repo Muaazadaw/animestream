@@ -11,6 +11,7 @@ import {
   MANGA_FORMATS,
   getTags,
   mediaHref,
+  formatLabel,
   prettyEnum,
   searchAnime,
   SEARCH_FILTER_KEYS,
@@ -195,7 +196,7 @@ export default async function SearchPage({ searchParams }: Props) {
                       {manga ? " ch" : ""}
                     </span>
                   ) : null}
-                  {m.format ? <span>{prettyEnum(m.format)}</span> : null}
+                  {m.format ? <span>{formatLabel(m)}</span> : null}
                   {m.seasonYear ? <span>{m.seasonYear}</span> : null}
                 </span>
                 <span className="pcard__title">

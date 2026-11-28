@@ -21,7 +21,7 @@ export default async function ReadPage({ params }: Props) {
   return (
     <Reader
       chapterId={chapterId}
-      manga={{ id: m.id, title: titleOf(m.title), cover: m.coverImage.large, format: m.format, type: "MANGA", chapters: m.chapters ?? null }}
+      manga={{ id: m.id, title: titleOf(m.title), cover: m.coverImage.large, format: m.format, countryOfOrigin: m.countryOfOrigin ?? null, type: "MANGA", chapters: m.chapters ?? null }}
     />
   );
 }

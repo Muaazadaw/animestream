@@ -27,6 +27,7 @@ export type AnimeInfo = {
   coverImage: { large: string | null };
   bannerImage: string | null;
   format: string | null;
+  countryOfOrigin?: string | null;
   status: string | null;
   episodes: number | null;
   seasonYear: number | null;
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
         `query ($ids: [Int], $from: Int, $to: Int) {
           media: Page(perPage: 50) {
             media(id_in: $ids, type: ANIME) {
-              id ${TITLE} coverImage { large } bannerImage format status episodes seasonYear averageScore
+              id ${TITLE} coverImage { large } bannerImage format countryOfOrigin status episodes seasonYear averageScore
               nextAiringEpisode { episode airingAt }
               relations { edges { relationType node {
                 id type ${TITLE} coverImage { large } bannerImage format status season seasonYear startDate { year month day }

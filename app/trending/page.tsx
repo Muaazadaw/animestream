@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import YearPicker from "@/components/YearPicker";
-import { airedEpisodes, currentSeason, getSeasonal, plainText, prettyEnum, statusDot, titleOf } from "@/lib/anilist";
+import { airedEpisodes, currentSeason, formatLabel, getSeasonal, plainText, statusDot, titleOf } from "@/lib/anilist";
 
 export const metadata: Metadata = { title: "Trending" };
 
@@ -54,7 +54,7 @@ export default async function TrendingPage({ searchParams }: Props) {
                     {aired || m.episodes ? (
                       <span>{m.status === "RELEASING" && m.episodes ? `${aired}/${m.episodes}` : aired || m.episodes} eps</span>
                     ) : null}
-                    {m.format ? <span>{prettyEnum(m.format)}</span> : null}
+                    {m.format ? <span>{formatLabel(m)}</span> : null}
                     {m.seasonYear ? <span>{m.seasonYear}</span> : null}
                     {m.averageScore ? <span>★ {m.averageScore}</span> : null}
                   </span>

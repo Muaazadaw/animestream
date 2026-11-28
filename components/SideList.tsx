@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { prettyEnum, statusDot, titleOf, type MediaCard } from "@/lib/anilist";
+import { formatLabel, statusDot, titleOf, type MediaCard } from "@/lib/anilist";
 import { Icon } from "./Menu";
 
 const FIRST = 5;
@@ -33,7 +33,7 @@ export default function SideList({ title, items, upcoming }: { title: string; it
                   {titleOf(m.title)}
                 </span>
                 <span className="chips">
-                  {m.format ? <span>{prettyEnum(m.format)}</span> : null}
+                  {m.format ? <span>{formatLabel(m)}</span> : null}
                   {m.seasonYear ? <span>{m.seasonYear}</span> : null}
                   {!upcoming && (m.episodes || m.nextAiringEpisode) ? (
                     <span>

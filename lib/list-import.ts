@@ -13,6 +13,7 @@ export type ImportMedia = {
   episodes: number | null;
   type?: string | null;
   chapters?: number | null;
+  countryOfOrigin?: string | null;
 };
 
 export type ImportedEntry = {
@@ -37,7 +38,7 @@ function dateString(d: FuzzyDate): string | null {
   return `${d.year}-${pad(d.month)}-${pad(d.day)}`;
 }
 
-export const IMPORT_MEDIA_FIELDS = "id idMal title { romaji english native userPreferred } coverImage { large } format episodes type chapters";
+export const IMPORT_MEDIA_FIELDS = "id idMal title { romaji english native userPreferred } coverImage { large } format episodes type chapters countryOfOrigin";
 
 /** Lists + favourites for one AniList user, by name or id. Works with or without a token (token adds private lists). */
 export const ANILIST_USER_LISTS_QUERY = `query ($user: String, $userId: Int) {
@@ -106,7 +107,7 @@ export function entriesFromAniList(data: AniListUserListsData): ImportedEntry[] 
 
 function savedAnime(m: ImportMedia): SavedAnime {
   const base = { id: m.id, title: titleOf(m.title), cover: m.coverImage.large, format: m.format, episodes: m.episodes };
-  return m.type === "MANGA" ? { ...base, type: "MANGA", chapters: m.chapters ?? null } : base;
+  return m.type === "MANGA" ? { ...base, type: "MANGA", chapters: m.chapters ?? null, countryOfOrigin: m.countryOfOrigin ?? null } : base;
 }
 
 export function toLibraryState(entries: ImportedEntry[], from: "anilist" | "mal", favoriteMedia: ImportMedia[] = []) {

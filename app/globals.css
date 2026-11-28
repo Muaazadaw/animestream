@@ -774,6 +774,22 @@ video::cue {
 .nrow.is-unread .nrow__read strong { color: #c9b8ff; }
 .notif__more { display: grid; place-items: center; padding: 8px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-2); color: var(--muted); cursor: pointer; flex-shrink: 0; }
 .notif__more:hover { color: var(--text); }
+/* Phones: a compact drop-down rather than a sheet over the whole screen. */
+@media (max-width: 760px) {
+  .notif { position: fixed; top: calc(62px + var(--safe-top)); right: 12px; left: auto; width: min(340px, calc(100vw - 24px)); }
+  .notif__sync { padding: 10px 12px 8px; font-size: 12px; }
+  .notif__tabs { margin: 0 12px 10px; padding: 3px; }
+  .notif__tabs button { padding: 6px; font-size: 13px; }
+  .notif__note { display: none; }
+  .notif__list { max-height: 45vh; max-height: 45dvh; padding: 10px 10px 10px; gap: 6px; }
+  .nrow__main img { width: 40px; }
+  .nrow__body { gap: 6px; padding: 7px 8px 7px 0; }
+  .nrow__title { font-size: 13px; }
+  .nrow__chips span { padding: 1px 6px; font-size: 11px; }
+  .nrow__read { width: 64px; }
+  .nrow__read strong { font-size: 13px; }
+  .nrow__read span { font-size: 11px; }
+}
 
 /* Profile / My List */
 .profile__head {

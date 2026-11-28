@@ -21,6 +21,12 @@ export async function GET(req: Request) {
   const m = await getManga(id).catch(() => null);
   if (!m) return NextResponse.json({ error: "Manga not found" }, { status: 404 });
 
+  // Novels have no readable chapters yet: the comic sites only carry the manga adaptation,
+  // which a title match would otherwise put on the novel's page.
+  if (m.format === "NOVEL") {
+    return NextResponse.json({ sources: {} }, { headers: { "Cache-Control": "public, s-maxage=3600" } });
+  }
+
   try {
     const mdId = await findMangaDexId(m.id, m.title);
     const [mangadex, asura, mangakatana, mangapill, titles] = await Promise.all([

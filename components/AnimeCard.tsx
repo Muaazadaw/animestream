@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { mediaHref, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
+import { formatLabel, mediaHref, titleOf, type MediaCard } from "@/lib/anilist";
 
 export default function AnimeCard({ anime, badge }: { anime: MediaCard; badge?: string }) {
   const title = titleOf(anime.title);
@@ -21,7 +21,7 @@ export default function AnimeCard({ anime, badge }: { anime: MediaCard; badge?: 
       </div>
       <div className="card__title">{title}</div>
       <div className="card__meta">
-        {[prettyEnum(anime.format), count, anime.seasonYear].filter(Boolean).join(" · ")}
+        {[formatLabel(anime), count, anime.seasonYear].filter(Boolean).join(" · ")}
       </div>
     </Link>
   );

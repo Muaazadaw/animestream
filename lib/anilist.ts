@@ -22,6 +22,8 @@ export type MediaCard = {
   chapters?: number | null;
   /** "ANIME" or "MANGA". */
   type?: string | null;
+  /** "JP", "KR", "CN", "TW"…: tells manga from manhwa and manhua, which AniList all files as MANGA. */
+  countryOfOrigin?: string | null;
   averageScore: number | null;
   seasonYear: number | null;
   genres: string[];
@@ -43,7 +45,6 @@ export type MediaDetail = MediaCard & {
   studios: { nodes: { name: string }[] };
   staff?: { edges: { role: string; node: { name: { full: string } } }[] };
   synonyms?: string[];
-  countryOfOrigin?: string | null;
   externalLinks: ExternalLink[];
   streamingEpisodes: { title: string; thumbnail: string; url: string; site: string }[];
   characters: {
@@ -62,6 +63,7 @@ const CARD_FIELDS = `
   bannerImage
   type
   format
+  countryOfOrigin
   status
   episodes
   chapters
@@ -219,14 +221,14 @@ export type RecommendedFrom = {
   id: number;
   recommendations: { nodes: { rating: number; mediaRecommendation: (QuickHitRaw & { averageScore: number | null; isAdult: boolean }) | null }[] };
 };
-type QuickHitRaw = { id: number; type: MediaType; title: MediaTitle; format: string | null; startDate: { year: number | null }; coverImage: { medium: string | null } };
+type QuickHitRaw = { id: number; type: MediaType; title: MediaTitle; format: string | null; countryOfOrigin?: string | null; startDate: { year: number | null }; coverImage: { medium: string | null } };
 
 /** AniList users' recommendations for each of these titles, best rated first. */
 export async function getRecommendations(ids: number[]): Promise<RecommendedFrom[]> {
   const data = await query<{ Page: { media: RecommendedFrom[] } }>(
     `query ($ids: [Int]) { Page(perPage: 25) { media(id_in: $ids) { id
       recommendations(sort: RATING_DESC, perPage: 15) { nodes { rating mediaRecommendation {
-        id type format isAdult averageScore title { romaji english native userPreferred } startDate { year } coverImage { medium } } } } } } }`,
+        id type format countryOfOrigin isAdult averageScore title { romaji english native userPreferred } startDate { year } coverImage { medium } } } } } } }`,
     { ids: [...ids].sort((a, b) => a - b) },
     86400,
   );
@@ -237,7 +239,7 @@ export async function getRecommendations(ids: number[]): Promise<RecommendedFrom
 export async function getPopularPicks(type: MediaType): Promise<QuickHit[]> {
   const data = await query<{ Page: { media: QuickHitRaw[] } }>(
     `query ($type: MediaType) { Page(perPage: 40) { media(type: $type, isAdult: false, sort: TRENDING_DESC, averageScore_greater: 75) {
-      id type format title { romaji english native userPreferred } startDate { year } coverImage { medium } } } }`,
+      id type format countryOfOrigin title { romaji english native userPreferred } startDate { year } coverImage { medium } } } }`,
     { type },
     3600,
   );
@@ -249,17 +251,18 @@ export const toQuickHit = (m: QuickHitRaw): QuickHit => ({
   type: m.type,
   title: titleOf(m.title),
   format: m.format,
+  countryOfOrigin: m.countryOfOrigin ?? null,
   year: m.startDate.year,
   cover: m.coverImage.medium,
 });
 
-export type QuickHit ={ id: number; type: MediaType; title: string; format: string | null; year: number | null; cover: string | null };
+export type QuickHit = { id: number; type: MediaType; title: string; format: string | null; countryOfOrigin?: string | null; year: number | null; cover: string | null };
 
 /** Best matches for the search box as you type: anime and manga together. */
 export async function quickSearch(search: string): Promise<QuickHit[]> {
   const data = await query<{ Page: { media: QuickHitRaw[] } }>(
     `query ($s: String) { Page(perPage: 8) { media(search: $s, isAdult: false, sort: SEARCH_MATCH) {
-      id type format title { romaji english native userPreferred } startDate { year } coverImage { medium } } } }`,
+      id type format countryOfOrigin title { romaji english native userPreferred } startDate { year } coverImage { medium } } } }`,
     { s: search },
     86400,
   );
@@ -517,6 +520,13 @@ export function plainText(html: string | null | undefined): string {
 /** CSS class for the coloured airing-status dot: green airing, blue finished, amber upcoming. */
 export function statusDot(status: string | null | undefined): string {
   return status === "RELEASING" ? "dot--airing" : status === "NOT_YET_RELEASED" ? "dot--upcoming" : "dot--finished";
+}
+
+/** The format to show: AniList's, except comics are called by where they're from (Korea → Manhwa, China / Taiwan → Manhua). */
+export function formatLabel(m: { format?: string | null; countryOfOrigin?: string | null }): string {
+  if (m.format === "MANGA" && m.countryOfOrigin === "KR") return "Manhwa";
+  if (m.format === "MANGA" && (m.countryOfOrigin === "CN" || m.countryOfOrigin === "TW")) return "Manhua";
+  return prettyEnum(m.format);
 }
 
 export function prettyEnum(v: string | null | undefined): string {

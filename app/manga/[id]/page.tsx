@@ -7,7 +7,7 @@ import InfoLinks from "@/components/InfoLinks";
 import { ChapterList, MangaActions, ReadMore } from "@/components/MangaDetail";
 import Row from "@/components/Row";
 import { getCharacters, getMangaSiteIds } from "@/lib/extras";
-import { getManga, plainText, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
+import { formatLabel, getManga, plainText, prettyEnum, titleOf, type MediaCard } from "@/lib/anilist";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -40,7 +40,7 @@ export default async function MangaPage({ params }: Props) {
   );
   const relations = m.relations.edges;
   const recs = m.recommendations.nodes.map((n) => n.mediaRecommendation).filter(Boolean) as MediaCard[];
-  const format = m.format === "MANGA" && m.countryOfOrigin === "KR" ? "Manhwa" : m.format === "MANGA" && m.countryOfOrigin === "CN" ? "Manhua" : prettyEnum(m.format);
+  const format = formatLabel(m);
 
   const facts: [string, string | number | null][] = [
     ["Type", format],
@@ -77,7 +77,7 @@ export default async function MangaPage({ params }: Props) {
           <h1>{title}</h1>
           {alt.length ? <div className="detail__native">{alt.slice(0, 4).join(" · ")}</div> : null}
           <MangaActions
-            manga={{ id: m.id, title, cover: m.coverImage.large, format: m.format, type: "MANGA", chapters: m.chapters ?? null }}
+            manga={{ id: m.id, title, cover: m.coverImage.large, format: m.format, countryOfOrigin: m.countryOfOrigin ?? null, type: "MANGA", chapters: m.chapters ?? null }}
           />
           <div className="hero__genres">
             {m.genres.map((g) => (
@@ -102,7 +102,7 @@ export default async function MangaPage({ params }: Props) {
       </div>
 
       <div className="container">
-        <ChapterList mangaId={m.id} />
+        <ChapterList mangaId={m.id} novel={m.format === "NOVEL"} />
 
         {characters.length > 0 ? <Characters characters={characters} /> : null}
 

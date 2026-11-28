@@ -6,7 +6,7 @@ import { Avatar, useProfile } from "@/components/AccountMenu";
 import { HistoryCard, useHistory } from "@/components/ContinueWatching";
 import { Icon } from "@/components/Menu";
 import type { AnimeInfo } from "@/app/api/anime-info/route";
-import { prettyEnum, statusDot } from "@/lib/anilist";
+import { formatLabel, prettyEnum, statusDot } from "@/lib/anilist";
 import { fetchAnimeInfo } from "@/lib/notifications";
 import { isManga, LIST_STATUSES, type ListStatus } from "@/lib/state";
 import {
@@ -101,7 +101,7 @@ function CardMenu({ entry }: { entry: Entry; custom: CustomList[] }) {
     cover: entry.cover,
     format: entry.format,
     episodes: entry.episodes,
-    ...(isManga(entry) ? { type: "MANGA" as const, chapters: entry.chapters ?? null } : {}),
+    ...(isManga(entry) ? { type: "MANGA" as const, chapters: entry.chapters ?? null, countryOfOrigin: entry.countryOfOrigin ?? null } : {}),
   };
   return (
     <div className="lcard__menu">
@@ -144,16 +144,28 @@ export default function LibraryPage() {
     };
   }, [idsKey]);
 
+  // Counts follow the All / Anime / Manga tab, like the list itself.
   const counts = useMemo(() => {
-    const c: Record<string, number> = { ALL: entries.length, FAVORITES: entries.filter((e) => e.favorite).length };
-    for (const e of entries) c[e.status] = (c[e.status] ?? 0) + 1;
+    const mine = kind ? entries.filter((e) => (kind === "MANGA") === isManga(e)) : entries;
+    const c: Record<string, number> = { ALL: mine.length, FAVORITES: mine.filter((e) => e.favorite).length };
+    for (const e of mine) c[e.status] = (c[e.status] ?? 0) + 1;
     return c;
-  }, [entries]);
+  }, [entries, kind]);
 
   const customView = view.startsWith("custom:") ? custom.find((c) => `custom:${c.id}` === view) : null;
+  // On the Manga tab, "Continue reading" is what you're reading now (watch history is anime only).
+  const mangaHistory = kind === "MANGA";
+  const continueReading = useMemo(
+    () =>
+      entries
+        .filter((e) => isManga(e) && (e.status === "CURRENT" || e.status === "REPEATING"))
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    [entries],
+  );
   const shown = useMemo(() => {
     let list: Entry[];
-    if (customView) {
+    if (view === "HISTORY" && mangaHistory) list = continueReading;
+    else if (customView) {
       list = customView.items.map(
         (a) => entries.find((e) => e.id === a.id) ?? { ...a, status: "PLANNING" as const, progress: 0, score: 0, updatedAt: 0, favorite: false },
       );
@@ -169,7 +181,7 @@ export default function LibraryPage() {
       if (term && !e.title.toLowerCase().includes(term)) return false;
       return true;
     });
-  }, [entries, view, customView, q, type, kind, airing, info]);
+  }, [entries, view, customView, q, type, kind, airing, info, mangaHistory, continueReading]);
 
   const name = display ?? profile.anilist?.name ?? user ?? "…";
   const reading = kind === "MANGA";
@@ -263,7 +275,7 @@ export default function LibraryPage() {
             <button className={view === "HISTORY" ? "is-active" : ""} onClick={() => setView("HISTORY")}>
               <Icon name="rewatch" size={15} />
               <span>{historyLabel}</span>
-              <em>{history.length}</em>
+              <em>{mangaHistory ? continueReading.length : history.length}</em>
             </button>
           </nav>
 
@@ -313,10 +325,10 @@ export default function LibraryPage() {
 
         <section className="lmain">
           <h2 className="lmain__title">
-            {viewLabel} <span>{view === "HISTORY" ? history.length : shown.length}</span>
+            {viewLabel} <span>{view === "HISTORY" && !mangaHistory ? history.length : shown.length}</span>
           </h2>
 
-          {view === "HISTORY" ? (
+          {view === "HISTORY" && !mangaHistory ? (
             history.length === 0 ? (
               <p className="empty">Nothing watched yet.</p>
             ) : (
@@ -365,7 +377,7 @@ export default function LibraryPage() {
                       {e.title}
                     </span>
                     <span className="chips">
-                      {m?.format ?? e.format ? <span>{prettyEnum(m?.format ?? e.format)}</span> : null}
+                      {m?.format ?? e.format ? <span>{formatLabel({ format: m?.format ?? e.format, countryOfOrigin: m?.countryOfOrigin ?? e.countryOfOrigin })}</span> : null}
                       {m?.seasonYear ? <span>{m.seasonYear}</span> : null}
                       {eps || (manga && e.progress) ? (
                         <span>

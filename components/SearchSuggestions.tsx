@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { prettyEnum, type QuickHit } from "@/lib/anilist";
+import { formatLabel, prettyEnum, type QuickHit } from "@/lib/anilist";
 
 // Results by search text, so typing back over a word doesn't ask again.
 const cache = new Map<string, QuickHit[]>();
@@ -44,7 +44,7 @@ export default function SearchSuggestions({ q, manga, onPick }: { q: string; man
           <span className="ssug__text">
             <strong>{h.title}</strong>
             <span>
-              {[h.type === "MANGA" ? "Manga" : "Anime", h.format !== h.type && prettyEnum(h.format), h.year].filter(Boolean).join(" · ")}
+              {[h.type === "MANGA" ? formatLabel(h) || "Manga" : "Anime", h.type !== "MANGA" && prettyEnum(h.format), h.year].filter(Boolean).join(" · ")}
             </span>
           </span>
         </Link>

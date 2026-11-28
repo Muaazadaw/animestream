@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { prettyEnum, statusDot, titleOf, type MediaCard } from "@/lib/anilist";
+import { formatLabel, statusDot, titleOf, type MediaCard } from "@/lib/anilist";
 import { getLists, STORAGE_EVENT, type ListEntry } from "@/lib/storage";
 import { isManga } from "@/lib/state";
 import { Icon } from "./Menu";
@@ -31,7 +31,7 @@ function MangaPoster({
       <span className="pcard__img">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={m.coverImage.large ?? undefined} alt="" loading="lazy" />
-        <span className="mcard__type">{prettyEnum(m.format) || "Manga"}</span>
+        <span className="mcard__type">{formatLabel(m) || "Manga"}</span>
         {left ? <span className="pcard__ep">{left}</span> : null}
         {right ? <span className="pcard__ago">{right}</span> : null}
       </span>
